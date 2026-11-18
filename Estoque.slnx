@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/src/Estoque.Domain/Estoque.Domain.csproj" />
+    <Project Path="backend/src/Estoque.Application/Estoque.Application.csproj" />
+    <Project Path="backend/src/Estoque.Infrastructure/Estoque.Infrastructure.csproj" />
+    <Project Path="backend/src/Estoque.Api/Estoque.Api.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <Project Path="Estoque.Frontend.csproj" />
+  </Folder>
+</Solution>
