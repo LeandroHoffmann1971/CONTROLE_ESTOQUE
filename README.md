@@ -1,5 +1,7 @@
 # Despensa | Controle de estoque
 
+Repositório do MVP de controle de estoque.
+
 MVP mobile-first para cadastro de produtos, saldo atual, níveis mínimos e registro de entradas e saídas. A API ASP.NET Core serve também o frontend HTML/CSS/JavaScript, e a persistência usa o Supabase REST API.
 
 ## Estrutura
