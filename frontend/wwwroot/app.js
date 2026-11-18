@@ -8,6 +8,7 @@ if (localStorage.getItem("despensa-data-version") !== LOCAL_DATA_VERSION) {
 
 const state = {
   products: JSON.parse(localStorage.getItem("despensa-products") || "[]"),
+  movements: [],
   filter: "all",
   query: ""
 };
@@ -18,7 +19,11 @@ const productForm = document.querySelector("#product-form");
 const movementForm = document.querySelector("#movement-form");
 const numberFormat = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
 
-document.querySelector("#today-label").textContent = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
+const currentDate = new Date();
+const currentDateLabel = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "long", year: "numeric" }).format(currentDate);
+document.querySelector("#today-label").textContent = currentDateLabel;
+document.querySelector("#movement-report-date").textContent = `Estoque atual na data de hoje: ${new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" }).format(currentDate)}.`;
+document.querySelector("#movement-current-date").textContent = `Posição consultada em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(currentDate)}.`;
 
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
@@ -130,6 +135,45 @@ function render() {
   document.querySelector("#products-body").innerHTML = filtered.length ? filtered.map(productRow).join("") : `<tr><td class="empty-state" colspan="6">${state.products.length ? "Nenhum produto encontrado." : "Seu catálogo ainda está vazio."}</td></tr>`;
 }
 
+function renderMovements() {
+  const sorted = [...state.movements].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  document.querySelector("#movement-count").textContent = `${sorted.length} ${sorted.length === 1 ? "movimentação" : "movimentações"}`;
+  document.querySelector("#movements-body").innerHTML = sorted.length ? sorted.map(movement => {
+    const isEntry = movement.type === "entry";
+    const label = isEntry ? "Entrada" : "Saída";
+    const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(movement.createdAt));
+    return `<tr>
+      <td><div class="product-cell"><span class="product-avatar">${escapeHtml(movement.productName.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(movement.productName)}</span></div></td>
+      <td><span class="movement-type ${isEntry ? "entry" : "exit"}">${label}</span></td>
+      <td class="movement-quantity ${isEntry ? "entry" : "exit"}">${isEntry ? "+" : "−"}${numberFormat.format(movement.quantity)}</td>
+      <td>${escapeHtml(date)}</td>
+      <td class="stock-cell">${numberFormat.format(movement.currentStock)}</td>
+    </tr>`;
+  }).join("") : `<tr><td class="empty-state" colspan="5">Nenhuma movimentação registrada.</td></tr>`;
+}
+
+async function loadMovements() {
+  const body = document.querySelector("#movements-body");
+  body.innerHTML = `<tr><td class="empty-state" colspan="5">Carregando movimentações...</td></tr>`;
+  try {
+    state.movements = await api("/api/movements");
+    renderMovements();
+  } catch (error) {
+    body.innerHTML = `<tr><td class="empty-state" colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    showToast(`Não foi possível carregar as movimentações: ${error.message}`);
+  }
+}
+
+function setPage() {
+  const page = window.location.hash === "#movimentacoes" ? "movimentacoes" : "estoque";
+  const isMovements = page === "movimentacoes";
+  document.querySelector("#inventory-view").hidden = isMovements;
+  document.querySelector("#movement-report-view").hidden = !isMovements;
+  document.querySelector("#breadcrumb-current").textContent = isMovements ? "Movimentações" : "Estoque";
+  document.querySelectorAll(".nav-link").forEach(link => link.classList.toggle("active", link.dataset.page === page));
+  if (isMovements) loadMovements();
+}
+
 function productRow(product) {
   const low = isLow(product);
   const initials = product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR");
@@ -172,6 +216,8 @@ function openMovement(product, type) {
 
 document.querySelector("#add-product").addEventListener("click", () => openProduct());
 document.querySelector("#refresh").addEventListener("click", refreshData);
+document.querySelector("#refresh-movements").addEventListener("click", loadMovements);
+window.addEventListener("hashchange", setPage);
 document.querySelector("#search").addEventListener("input", event => { state.query = event.target.value.trim(); render(); });
 document.querySelectorAll(".filter").forEach(button => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;
@@ -252,4 +298,5 @@ movementForm.addEventListener("submit", async event => {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 window.addEventListener("online", refreshData);
+setPage();
 refreshData();

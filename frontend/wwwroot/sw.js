@@ -1,5 +1,5 @@
-const CACHE_NAME = "despensa-shell-v4";
-const APP_FILES = ["/", "/index.html", "/styles.css", "/app.js"];
+const CACHE_NAME = "despensa-shell-v8";
+const APP_FILES = ["/", "/index.html", "/styles.css", "/movement-report.css", "/app.js"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES)));

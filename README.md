@@ -44,7 +44,7 @@ O inicializador solicita a chave Supabase e inicia a API, que também serve a in
 - `Estoque.Frontend.csproj`: host estático independente, disponível para desenvolvimento isolado do frontend.
 - A trigger `apply_stock_movement` atualiza o saldo na mesma transação da inserção da movimentação. Saídas abaixo de zero são permitidas após confirmação na interface, preservando o alerta não bloqueante do requisito.
 - Produtos com movimentações não podem ser excluídos, para não apagar o histórico de auditoria.
-- O frontend mantém o catálogo em `localStorage`, usa service worker para abrir a interface sem rede e guarda operações pendentes localmente para sincronizar quando a conexão voltar. O código do produto é atribuído automaticamente pelo banco e a descrição deve ser única. As movimentações continuam registradas no banco para atualizar o saldo e manter auditoria, mas não são exibidas em uma tela separada.
+- O frontend mantém o catálogo em `localStorage`, usa service worker para abrir a interface sem rede e guarda operações pendentes localmente para sincronizar quando a conexão voltar. O código do produto é atribuído automaticamente pelo banco e a descrição deve ser única. A tela Movimentações lista descrição, tipo, quantidade, data e estoque atual, ordenada da mais recente para a mais antiga.
 
 ## Execução e validação
 

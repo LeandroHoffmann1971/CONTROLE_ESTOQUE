@@ -22,6 +22,9 @@ create table if not exists public.stock_movements (
     created_at timestamptz not null default now()
 );
 
+alter table public.stock_movements
+    alter column created_at set default now();
+
 do $$
 declare
     code_data_type text;

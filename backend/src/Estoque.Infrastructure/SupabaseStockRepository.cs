@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Estoque.Application;
 using Estoque.Domain;
 
@@ -37,13 +38,43 @@ public sealed class SupabaseStockRepository : IStockRepository
         await EnsureSuccessAsync(response, token);
     }
 
-    public Task<IReadOnlyList<StockMovement>> GetMovementsAsync(Guid? productId, CancellationToken token)
+    public async Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken token)
     {
         var filter = productId.HasValue ? $"&product_id=eq.{productId}" : "";
-        return GetListAsync<StockMovement>($"stock_movements?select=*&order=created_at.desc&limit=200{filter}", token);
+        const int pageSize = 1000;
+        var movements = new List<StockMovementReportItem>();
+        var offset = 0;
+        List<MovementResponse> page;
+
+        do
+        {
+            page = (await GetListAsync<MovementResponse>(
+                $"stock_movements?select=*,products(name,current_stock)&order=created_at.desc&limit={pageSize}&offset={offset}{filter}",
+                token)).ToList();
+            movements.AddRange(page.Select(movement =>
+            {
+                var product = movement.Product
+                    ?? throw new InvalidOperationException("Produto não encontrado para a movimentação.");
+                return new StockMovementReportItem(
+                    movement.Id, movement.ProductId, product.Name, movement.Type, movement.Quantity,
+                    product.CurrentStock, movement.Reason, movement.OperatorName, movement.CreatedAt);
+            }));
+            offset += pageSize;
+        } while (page.Count == pageSize);
+
+        return movements;
     }
 
-    public async Task<StockMovement> CreateMovementAsync(StockMovement movement, CancellationToken token) => (await SendListAsync<StockMovement>(HttpMethod.Post, "stock_movements", movement, token)).Single();
+    public async Task<StockMovement> CreateMovementAsync(StockMovement movement, CancellationToken token) =>
+        (await SendListAsync<StockMovement>(HttpMethod.Post, "stock_movements", new
+        {
+            id = movement.Id,
+            product_id = movement.ProductId,
+            type = movement.Type,
+            quantity = movement.Quantity,
+            reason = movement.Reason,
+            operator_name = movement.OperatorName
+        }, token)).Single();
 
     private async Task<IReadOnlyList<T>> GetListAsync<T>(string path, CancellationToken token)
     {
@@ -71,5 +102,41 @@ public sealed class SupabaseStockRepository : IStockRepository
         var message = $"Supabase respondeu {(int)response.StatusCode}: {details}";
         if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("Tabelas do Supabase não encontradas. Execute backend/supabase/schema.sql.");
         throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private sealed class MovementResponse
+    {
+        [JsonPropertyName("id")]
+        public Guid Id { get; set; }
+
+        [JsonPropertyName("product_id")]
+        public Guid ProductId { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "";
+
+        [JsonPropertyName("quantity")]
+        public decimal Quantity { get; set; }
+
+        [JsonPropertyName("reason")]
+        public string? Reason { get; set; }
+
+        [JsonPropertyName("operator_name")]
+        public string? OperatorName { get; set; }
+
+        [JsonPropertyName("created_at")]
+        public DateTimeOffset CreatedAt { get; set; }
+
+        [JsonPropertyName("products")]
+        public MovementProduct? Product { get; set; }
+    }
+
+    private sealed class MovementProduct
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+
+        [JsonPropertyName("current_stock")]
+        public decimal CurrentStock { get; set; }
     }
 }

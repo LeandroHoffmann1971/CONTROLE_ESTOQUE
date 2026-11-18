@@ -5,6 +5,16 @@ namespace Estoque.Application;
 public sealed record CreateProductRequest(string Name, decimal MinimumStock, decimal InitialStock);
 public sealed record UpdateProductRequest(string Name, decimal MinimumStock);
 public sealed record CreateMovementRequest(string Type, decimal Quantity, string? Reason, string? OperatorName);
+public sealed record StockMovementReportItem(
+    Guid Id,
+    Guid ProductId,
+    string ProductName,
+    string Type,
+    decimal Quantity,
+    decimal CurrentStock,
+    string? Reason,
+    string? OperatorName,
+    DateTimeOffset CreatedAt);
 
 public interface IStockRepository
 {
@@ -13,7 +23,7 @@ public interface IStockRepository
     Task<Product> CreateProductAsync(Product product, CancellationToken cancellationToken);
     Task<Product> UpdateProductAsync(Product product, CancellationToken cancellationToken);
     Task DeleteProductAsync(Guid id, CancellationToken cancellationToken);
-    Task<IReadOnlyList<StockMovement>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken);
     Task<StockMovement> CreateMovementAsync(StockMovement movement, CancellationToken cancellationToken);
 }
 
@@ -61,7 +71,7 @@ public sealed class StockService(IStockRepository repository)
         }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<StockMovement>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken) => repository.GetMovementsAsync(productId, cancellationToken);
+    public Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken) => repository.GetMovementsAsync(productId, cancellationToken);
 
     private static void ValidateProduct(string name, decimal minimumStock)
     {
