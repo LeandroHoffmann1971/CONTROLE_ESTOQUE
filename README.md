@@ -23,9 +23,8 @@ Estoque.Frontend.csproj     Host estático independente (ASP.NET Core)
 ## Configuração do Supabase
 
 1. No SQL Editor do projeto Supabase `oaukruzqhijxgvjlyyqk`, execute `backend/supabase/schema.sql`.
-2. Em **Project Settings > API Keys**, crie/copiei uma chave secreta (`sb_secret_...`) e configure-a no ambiente do backend como `SUPABASE_SECRET_KEY`. O inicializador solicita a chave de forma mascarada. A API também aceita a chave JWT legada `service_role` pela variável `SUPABASE_SERVICE_ROLE_KEY`.
-  A chave secreta ignora RLS e nunca deve ser colocada no JavaScript, no `appsettings.json` versionado, em variáveis `VITE_*` ou enviada por chat.
-3. A URL do projeto já está configurada em `backend/src/Estoque.Api/appsettings.json`. Para outro ambiente, defina `Supabase__Url` no ambiente do servidor.
+2. Em **Project Settings > API Keys**, crie/copiei uma chave secreta (`sb_secret_...`) e coloque-a em `SUPABASE_SECRET_KEY` no arquivo `.env` da raiz do projeto. A URL fica em `SUPABASE_URL`; o arquivo já vem preenchido com a URL configurada. Também é aceita a chave JWT legada `service_role` usando `SUPABASE_SERVICE_ROLE_KEY`.
+  A chave secreta ignora RLS e nunca deve ser colocada no JavaScript, no `appsettings.json` versionado, em variáveis `VITE_*`, enviada por chat ou commitada. O `.env` é ignorado pelo Git.
 
 Ao aplicar esta atualização a um banco existente, o schema limpa os produtos e movimentações atuais uma única vez para converter `code` em numeração automática. A coluna antiga de códigos é substituída e os valores anteriores não são preservados.
 
@@ -35,7 +34,7 @@ Execute o SQL no Supabase. Depois, inicie o MVP com um único comando:
 run-mvp.cmd
 ```
 
-O inicializador solicita a chave Supabase e inicia a API, que também serve a interface. Abra `http://localhost:5080`; a API e o frontend usam o mesmo endereço. Para encerrar, pressione `Ctrl+C` na janela do inicializador.
+O inicializador carrega as configurações de `.env` e inicia a API, que também serve a interface. Abra `http://localhost:5080`; a API e o frontend usam o mesmo endereço. Para encerrar, pressione `Ctrl+C` na janela do inicializador.
 
 ## Camadas e dados
 
@@ -55,6 +54,17 @@ Requer .NET SDK 9.0 ou superior:
 ```powershell
 dotnet build Estoque.slnx
 ```
+
+## Executar com Docker
+
+Com Docker instalado e o `.env` preenchido, construa e execute a imagem:
+
+```powershell
+docker build -t controle-estoque .
+docker run --rm -p 8080:8080 --env-file .env controle-estoque
+```
+
+Abra `http://localhost:8080`. O `.dockerignore` impede que o `.env` seja incluído na imagem. No Render, crie um Web Service usando o runtime Docker e configure `SUPABASE_URL` e `SUPABASE_SECRET_KEY` nas variáveis de ambiente do serviço; o container escuta a porta informada por `PORT`.
 
 ## Segurança e escopo
 

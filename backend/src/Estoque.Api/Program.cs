@@ -5,7 +5,9 @@ using Microsoft.Extensions.FileProviders;
 var builder = WebApplication.CreateBuilder(args);
 var supabase = new SupabaseOptions
 {
-	Url = builder.Configuration["Supabase:Url"] ?? "https://oaukruzqhijxgvjlyyqk.supabase.co",
+	Url = builder.Configuration["Supabase:Url"]
+		?? builder.Configuration["SUPABASE_URL"]
+		?? "https://oaukruzqhijxgvjlyyqk.supabase.co",
 	ServiceRoleKey = builder.Configuration["Supabase:SecretKey"]
 		?? builder.Configuration["SUPABASE_SECRET_KEY"]
 		?? builder.Configuration["Supabase:ServiceRoleKey"]
