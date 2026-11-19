@@ -368,25 +368,40 @@ th {
 }
 
 @media (max-width: 639px) {
-  /* Lock the mobile shell to the visible viewport; only long data tables scroll internally. */
+  /* Keep the content narrow while allowing long product lists to extend vertically. */
   body {
-    height: 100vh;
-    height: 100dvh;
-    overflow: hidden;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .sidebar {
     flex: 0 0 56px;
   }
 
+  .brand {
+    width: 100%;
+    max-width: 320px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .nav-list {
+    max-width: 320px;
+  }
+
   .main-content {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 120px);
-    height: calc(100dvh - 120px - env(safe-area-inset-bottom));
-    min-height: 0;
-    overflow: hidden;
-    padding: 0 16px;
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    margin-right: auto;
+    margin-left: auto;
+    min-height: calc(100vh - 56px);
+    min-height: calc(100dvh - 56px);
+    height: auto;
+    overflow: visible;
+    padding: 0 16px calc(88px + env(safe-area-inset-bottom));
   }
 
   .topbar {
@@ -406,9 +421,8 @@ th {
 
   #inventory-view {
     display: grid;
-    flex: 1;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
     min-width: 0;
     min-height: 0;
   }
@@ -491,15 +505,13 @@ th {
 
   .inventory-section,
   #movement-report-view .inventory-section {
-    display: flex;
-    flex-direction: column;
+    display: block;
     min-width: 0;
-    min-height: 0;
     padding-top: 4px;
   }
 
   .section-heading {
-    flex: 0 0 36px;
+    min-height: 44px;
   }
 
   .section-heading p {
@@ -507,14 +519,12 @@ th {
   }
 
   .table-toolbar {
-    flex: 0 0 auto;
     gap: 6px;
     margin: 2px 0 4px;
   }
 
   .table-wrap {
-    flex: 1;
-    min-height: 0;
+    overflow: visible;
     margin-right: 0;
     border: 0;
     border-radius: 0;
@@ -623,22 +633,19 @@ th {
     text-align: center;
   }
 
-  .table-footer,
-  footer {
-    display: none;
+  .table-footer {
+    display: flex;
   }
 
   #movement-report-view {
     display: grid;
-    flex: 1;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
     min-width: 0;
     min-height: 0;
   }
 
   #movement-report-view .movement-report-table {
-    flex: 1;
-    min-height: 0;
+    overflow: visible;
   }
 }
