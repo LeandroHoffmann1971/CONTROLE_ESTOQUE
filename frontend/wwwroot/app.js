@@ -143,11 +143,11 @@ function renderMovements() {
     const label = isEntry ? "Entrada" : "Saída";
     const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(movement.createdAt));
     return `<tr>
-      <td><div class="product-cell"><span class="product-avatar">${escapeHtml(movement.productName.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(movement.productName)}</span></div></td>
-      <td><span class="movement-type ${isEntry ? "entry" : "exit"}">${label}</span></td>
-      <td class="movement-quantity ${isEntry ? "entry" : "exit"}">${isEntry ? "+" : "−"}${numberFormat.format(movement.quantity)}</td>
-      <td>${escapeHtml(date)}</td>
-      <td class="stock-cell">${numberFormat.format(movement.currentStock)}</td>
+      <td data-label="Produto"><div class="product-cell"><span class="product-avatar">${escapeHtml(movement.productName.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(movement.productName)}</span></div></td>
+      <td data-label="Movimentação"><span class="movement-type ${isEntry ? "entry" : "exit"}">${label}</span></td>
+      <td data-label="Quantidade" class="movement-quantity ${isEntry ? "entry" : "exit"}">${isEntry ? "+" : "−"}${numberFormat.format(movement.quantity)}</td>
+      <td data-label="Data">${escapeHtml(date)}</td>
+      <td data-label="Estoque atual" class="stock-cell">${numberFormat.format(movement.currentStock)}</td>
     </tr>`;
   }).join("") : `<tr><td class="empty-state" colspan="5">Nenhuma movimentação registrada.</td></tr>`;
 }
@@ -183,12 +183,12 @@ function productRow(product) {
   const low = isLow(product);
   const initials = product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR");
   return `<tr>
-    <td><div class="product-cell"><span class="product-avatar">${escapeHtml(initials)}</span><span class="product-name">${escapeHtml(product.name)}</span></div></td>
-    <td class="code-cell">${escapeHtml(product.code ?? "—")}</td>
-    <td class="stock-cell ${low ? "critical" : ""}">${numberFormat.format(product.current_stock)}</td>
-    <td>${numberFormat.format(product.minimum_stock)}</td>
-    <td><span class="status ${low ? "low" : "healthy"}">${low ? "Repor estoque" : "Saudável"}</span></td>
-    <td><div class="row-actions"><button class="row-action" data-action="entry" data-id="${product.id}" title="Registrar entrada" aria-label="Registrar entrada de ${escapeHtml(product.name)}">＋</button><button class="row-action" data-action="exit" data-id="${product.id}" title="Registrar saída" aria-label="Registrar saída de ${escapeHtml(product.name)}">−</button><button class="row-action" data-action="edit" data-id="${product.id}" title="Editar produto" aria-label="Editar ${escapeHtml(product.name)}">✎</button><button class="row-action" data-action="delete" data-id="${product.id}" title="Excluir produto" aria-label="Excluir ${escapeHtml(product.name)}">×</button></div></td>
+    <td data-label="Produto"><div class="product-cell"><span class="product-avatar">${escapeHtml(initials)}</span><span class="product-name">${escapeHtml(product.name)}</span></div></td>
+    <td data-label="Código" class="code-cell">${escapeHtml(product.code ?? "—")}</td>
+    <td data-label="Estoque atual" class="stock-cell ${low ? "critical" : ""}">${numberFormat.format(product.current_stock)}</td>
+    <td data-label="Estoque mínimo">${numberFormat.format(product.minimum_stock)}</td>
+    <td data-label="Status"><span class="status ${low ? "low" : "healthy"}">${low ? "Repor estoque" : "Saudável"}</span></td>
+    <td data-label="Ações"><div class="row-actions"><button class="row-action" data-action="entry" data-id="${product.id}" title="Registrar entrada" aria-label="Registrar entrada de ${escapeHtml(product.name)}">＋</button><button class="row-action" data-action="exit" data-id="${product.id}" title="Registrar saída" aria-label="Registrar saída de ${escapeHtml(product.name)}">−</button><button class="row-action" data-action="edit" data-id="${product.id}" title="Editar produto" aria-label="Editar ${escapeHtml(product.name)}">✎</button><button class="row-action" data-action="delete" data-id="${product.id}" title="Excluir produto" aria-label="Excluir ${escapeHtml(product.name)}">×</button></div></td>
   </tr>`;
 }
 

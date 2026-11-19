@@ -515,11 +515,112 @@ th {
   .table-wrap {
     flex: 1;
     min-height: 0;
+    margin-right: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
     scrollbar-width: none;
   }
 
   .table-wrap::-webkit-scrollbar {
     display: none;
+  }
+
+  #inventory-view table,
+  .movement-report-table table,
+  #inventory-view tbody,
+  .movement-report-table tbody {
+    display: block;
+    width: 100%;
+    white-space: normal;
+  }
+
+  #inventory-view thead,
+  .movement-report-table thead {
+    display: none;
+  }
+
+  #inventory-view tbody,
+  .movement-report-table tbody {
+    display: grid;
+    gap: 8px;
+  }
+
+  #inventory-view tbody tr,
+  .movement-report-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 12px;
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  #inventory-view tbody td,
+  .movement-report-table tbody td {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    width: auto;
+    height: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 0;
+    border: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font-size: 13px;
+  }
+
+  #inventory-view tbody td::before,
+  .movement-report-table tbody td::before {
+    content: attr(data-label);
+    color: #62685c;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  #inventory-view td[data-label="Produto"],
+  .movement-report-table td[data-label="Produto"] {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 4px;
+    padding-bottom: 8px;
+  }
+
+  #inventory-view td[data-label="Produto"]::before,
+  .movement-report-table td[data-label="Produto"]::before {
+    display: none;
+  }
+
+  #inventory-view td[data-label="Ações"] {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  #inventory-view td[data-label="Ações"]::before {
+    margin-right: auto;
+  }
+
+  #inventory-view .row-actions {
+    gap: 4px;
+  }
+
+  #inventory-view .row-action {
+    flex: 0 0 44px;
+  }
+
+  #inventory-view td.empty-state,
+  .movement-report-table td.empty-state {
+    grid-column: 1 / -1;
+    min-height: 64px;
+    align-items: center;
+    text-align: center;
   }
 
   .table-footer,
