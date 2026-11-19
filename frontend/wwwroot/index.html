@@ -16,8 +16,10 @@
     <a class="brand" href="#" aria-label="Despensa, início"><span class="brand-mark">D</span><span>despensa<span class="brand-dot">.</span></span></a>
     <div class="workspace-label">OPERAÇÃO</div>
     <nav aria-label="Navegação principal">
-      <a class="nav-link active" href="#estoque" data-page="estoque"><span class="nav-icon">▦</span>Estoque</a>
-      <a class="nav-link" href="#movimentacoes" data-page="movimentacoes"><span class="nav-icon">↕</span>Movimentações</a>
+      <ul class="nav-list">
+        <li><a class="nav-link active" href="#estoque" data-page="estoque" aria-current="page"><span class="nav-icon" aria-hidden="true">▦</span>Estoque</a></li>
+        <li><a class="nav-link" href="#movimentacoes" data-page="movimentacoes"><span class="nav-icon" aria-hidden="true">↕</span>Movimentações</a></li>
+      </ul>
     </nav>
     <div class="sidebar-bottom"><span class="connection-dot"></span><span id="connection-label">Conectando...</span></div>
   </aside>
@@ -38,7 +40,7 @@
 
     <section class="inventory-section">
       <div class="section-heading"><div><h2>Seus produtos</h2><p>Saldo atualizado em tempo real</p></div><button class="button button-quiet" id="refresh" title="Atualizar estoque" aria-label="Atualizar estoque">↻</button></div>
-      <div class="table-toolbar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Buscar produto ou código" aria-label="Buscar produto ou código"></label><div class="filters" role="group" aria-label="Filtrar produtos"><button class="filter active" data-filter="all">Todos <span id="count-all">0</span></button><button class="filter" data-filter="low">Abaixo do mínimo <span id="count-low">0</span></button></div></div>
+      <div class="table-toolbar"><label class="search-box" for="search"><span aria-hidden="true">⌕</span><span class="search-label">Buscar</span><input id="search" type="search" placeholder="Produto ou código" aria-label="Buscar produto ou código"></label><div class="filters" role="group" aria-label="Filtrar produtos"><button class="filter active" data-filter="all">Todos <span id="count-all">0</span></button><button class="filter" data-filter="low">Abaixo do mínimo <span id="count-low">0</span></button></div></div>
       <div class="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CÓDIGO</th><th>ESTOQUE ATUAL</th><th>ESTOQUE MÍNIMO</th><th>STATUS</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody id="products-body"><tr><td class="empty-state" colspan="6">Carregando produtos...</td></tr></tbody></table></div>
       <div class="table-footer"><span id="result-count">0 produtos</span><span>Dados sincronizados com Supabase</span></div>
     </section>

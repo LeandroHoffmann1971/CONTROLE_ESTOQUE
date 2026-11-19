@@ -170,7 +170,12 @@ function setPage() {
   document.querySelector("#inventory-view").hidden = isMovements;
   document.querySelector("#movement-report-view").hidden = !isMovements;
   document.querySelector("#breadcrumb-current").textContent = isMovements ? "Movimentações" : "Estoque";
-  document.querySelectorAll(".nav-link").forEach(link => link.classList.toggle("active", link.dataset.page === page));
+  document.querySelectorAll(".nav-link").forEach(link => {
+    const active = link.dataset.page === page;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
   if (isMovements) loadMovements();
 }
 
