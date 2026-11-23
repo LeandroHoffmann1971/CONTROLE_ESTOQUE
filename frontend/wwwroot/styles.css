@@ -895,3 +895,17 @@ th {
     overflow: visible;
   }
 }
+
+.movement-operator {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -5px 0 16px;
+  color: #777d70;
+  font-size: 12px;
+}
+
+.movement-operator strong {
+  color: #30352b;
+  font-weight: 600;
+}

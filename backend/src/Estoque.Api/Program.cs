@@ -189,10 +189,10 @@ app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserS
 	.WithDescription("Disponível somente para gerentes. Não permite excluir a própria conta ou o último gerente.");
 app.MapGet("/api/products", async (StockService service, CancellationToken token) => Results.Ok(await service.GetProductsAsync(token)));
 app.MapGet("/api/products/lookup", async (StockService service, CancellationToken token) =>
-	Results.Ok((await service.GetProductsAsync(token)).Select(product => new { product.Id, product.Name, product.CurrentStock })))
+	Results.Ok((await service.GetProductsAsync(token)).Select(product => new { product.Id, product.Name, product.Code, product.CurrentStock })))
 	.WithName("LookupProductsForMovement")
 	.WithSummary("Lista produtos para registro de movimentações")
-	.WithDescription("Disponível para gerentes e colaboradores; retorna somente ID, nome e saldo.");
+	.WithDescription("Disponível para gerentes e colaboradores; retorna ID, código, nome e saldo.");
 app.MapPost("/api/products", async (CreateProductRequest request, StockService service, CancellationToken token) =>
 	Results.Created("/api/products", await service.CreateProductAsync(request, token)));
 app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest request, StockService service, CancellationToken token) =>
@@ -203,7 +203,12 @@ app.MapDelete("/api/products/{id:guid}", async (Guid id, StockService service, C
 	return Results.NoContent();
 });
 app.MapGet("/api/movements", async (Guid? productId, StockService service, CancellationToken token) => Results.Ok(await service.GetMovementsAsync(productId, token)));
-app.MapPost("/api/products/{id:guid}/movements", async (Guid id, CreateMovementRequest request, StockService service, CancellationToken token) =>
-	Results.Created("/api/movements", await service.CreateMovementAsync(id, request, token)));
+app.MapPost("/api/products/{id:guid}/movements", async (Guid id, CreateMovementRequest request, HttpContext context, StockService service, CancellationToken token) =>
+{
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+		return Results.Unauthorized();
+	var authenticatedRequest = request with { OperatorName = currentUser.Name };
+	return Results.Created("/api/movements", await service.CreateMovementAsync(id, authenticatedRequest, token));
+});
 
 app.Run();

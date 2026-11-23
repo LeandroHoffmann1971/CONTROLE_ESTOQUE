@@ -134,7 +134,7 @@ public sealed class UserService(IUserRepository repository)
     private static string ValidatePasswordAndReturn(string? password)
     {
         if (password is null || password.Length != 6 || password.Any(character => !char.IsAsciiLetterOrDigit(character)))
-            throw new ArgumentException("A senha deve conter exatamente 6 caracteres alfanuméricos.");
+            throw new ArgumentException("A senha deve ter 6 caracteres alfanuméricos");
         return password;
     }
 

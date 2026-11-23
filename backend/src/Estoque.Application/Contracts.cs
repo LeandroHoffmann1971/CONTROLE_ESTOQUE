@@ -62,7 +62,7 @@ public sealed class StockService(IStockRepository repository)
         if (request.Type is not ("entry" or "exit")) throw new ArgumentException("Tipo de movimentação inválido.");
         if (request.Quantity <= 0) throw new ArgumentException("A quantidade deve ser maior que zero.");
         if (request.Reason?.Length > 250) throw new ArgumentException("O motivo deve ter no máximo 250 caracteres.");
-        if (request.OperatorName?.Length > 100) throw new ArgumentException("O operador deve ter no máximo 100 caracteres.");
+        if (request.OperatorName?.Length > 150) throw new ArgumentException("O operador deve ter no máximo 150 caracteres.");
         if (await repository.GetProductAsync(productId, cancellationToken) is null) throw new KeyNotFoundException("Produto não encontrado.");
         return await repository.CreateMovementAsync(new StockMovement
         {

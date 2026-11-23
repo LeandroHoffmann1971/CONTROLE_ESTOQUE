@@ -23,6 +23,9 @@ create table if not exists public.stock_movements (
 );
 
 alter table public.stock_movements
+    alter column operator_name type varchar(150);
+
+alter table public.stock_movements
     alter column created_at set default now();
 
 do $$

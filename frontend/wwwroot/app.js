@@ -10,6 +10,7 @@ const state = {
   products: JSON.parse(localStorage.getItem("despensa-products") || "[]"),
   movements: [],
   registerProducts: [],
+  registerQuery: "",
   users: [],
   accessToken: null,
   user: null,
@@ -25,6 +26,7 @@ const productForm = document.querySelector("#product-form");
 const movementForm = document.querySelector("#movement-form");
 const userEditForm = document.querySelector("#user-edit-form");
 const numberFormat = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
+const PASSWORD_ERROR = "A senha deve ter 6 caracteres alfanuméricos";
 
 const currentDate = new Date();
 const currentDateLabel = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "long", year: "numeric" }).format(currentDate);
@@ -215,12 +217,15 @@ async function loadRegisterProducts() {
 
 function renderRegisterProducts() {
   const cards = document.querySelector("#register-cards");
-  cards.innerHTML = state.registerProducts.length ? state.registerProducts.map(product => `
+  const query = state.registerQuery.toLocaleLowerCase("pt-BR");
+  const filtered = state.registerProducts.filter(product =>
+    `${product.name} ${product.code ?? ""}`.toLocaleLowerCase("pt-BR").includes(query));
+  cards.innerHTML = filtered.length ? filtered.map(product => `
     <article class="data-card product-card">
       <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(product.name)}</span></div></div>
       <dl class="card-details"><div><dt>Estoque atual</dt><dd>${numberFormat.format(product.currentStock)}</dd></div></dl>
       <div class="card-actions"><button class="button button-primary" data-register-id="${product.id}">${state.registerType === "entry" ? "Registrar entrada" : "Registrar saída"}</button></div>
-    </article>`).join("") : `<p class="empty-state">Nenhum produto cadastrado.</p>`;
+    </article>`).join("") : `<p class="empty-state">${state.registerProducts.length ? "Nenhum produto encontrado." : "Nenhum produto cadastrado."}</p>`;
 }
 
 function setPage() {
@@ -296,9 +301,9 @@ function openMovement(product, type) {
   movementForm.reset();
   movementForm.elements.productId.value = product.id;
   movementForm.elements.type.value = type;
-  movementForm.elements.operatorName.value = state.user?.name || "";
   document.querySelector("#movement-title").textContent = type === "entry" ? "Registrar entrada" : "Registrar saída";
   document.querySelector("#movement-product-name").textContent = `${product.name} · saldo atual ${numberFormat.format(product.current_stock)}`;
+  document.querySelector("#movement-operator-name").textContent = state.user?.name || "—";
   document.querySelector("#movement-error").textContent = "";
   movementDialog.showModal();
 }
@@ -320,6 +325,21 @@ function formatCpf(value) {
   if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
+
+function bindPasswordValidation(input, optional) {
+  const validate = () => {
+    const emptyAllowed = optional && input.value.length === 0;
+    const valid = emptyAllowed || /^[A-Za-z0-9]{6}$/.test(input.value);
+    input.setCustomValidity(valid ? "" : PASSWORD_ERROR);
+  };
+  input.addEventListener("input", validate);
+  input.addEventListener("invalid", validate);
+  input.form.addEventListener("reset", () => window.setTimeout(validate, 0));
+  validate();
+}
+
+bindPasswordValidation(document.querySelector('#user-form input[name="password"]'), false);
+bindPasswordValidation(document.querySelector('#user-edit-form input[name="password"]'), true);
 
 function showAuthenticatedApp(user) {
   state.user = user;
@@ -401,6 +421,10 @@ document.querySelector("#refresh-movements").addEventListener("click", loadMovem
 document.querySelector("#refresh-register").addEventListener("click", loadRegisterProducts);
 window.addEventListener("hashchange", setPage);
 document.querySelector("#search").addEventListener("input", event => { state.query = event.target.value.trim(); render(); });
+document.querySelector("#register-search").addEventListener("input", event => {
+  state.registerQuery = event.target.value.trim();
+  renderRegisterProducts();
+});
 document.querySelectorAll(".filter").forEach(button => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;
   document.querySelectorAll(".filter").forEach(item => item.classList.toggle("active", item === button));
@@ -540,7 +564,7 @@ movementForm.addEventListener("submit", async event => {
     if (!window.confirm("A saída é maior que o saldo registrado. Deseja continuar?")) return;
   }
   try {
-    await api(`/api/products/${data.productId}/movements`, { method: "POST", body: JSON.stringify({ type: data.type, quantity: Number(data.quantity), reason: data.reason, operatorName: data.operatorName }) });
+    await api(`/api/products/${data.productId}/movements`, { method: "POST", body: JSON.stringify({ type: data.type, quantity: Number(data.quantity), reason: data.reason }) });
     movementDialog.close();
     showToast("Movimentação registrada.");
     if (state.user.status === "GERENTE") await refreshData();
@@ -554,7 +578,7 @@ movementForm.addEventListener("submit", async event => {
     const quantity = Number(data.quantity);
     const product = state.products.find(item => item.id === data.productId);
     product.current_stock = Number(product.current_stock) + (data.type === "entry" ? quantity : -quantity);
-    queueOffline({ kind: "movement", productId: data.productId, payload: { type: data.type, quantity, reason: data.reason, operatorName: data.operatorName } });
+    queueOffline({ kind: "movement", productId: data.productId, payload: { type: data.type, quantity, reason: data.reason } });
     movementDialog.close();
     render();
     showToast("Movimentação salva neste dispositivo e pendente de sincronização.");
