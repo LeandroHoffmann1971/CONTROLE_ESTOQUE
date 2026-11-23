@@ -1,4 +1,4 @@
-const CACHE_NAME = "despensa-shell-v24";
+const CACHE_NAME = "despensa-shell-v25";
 const APP_FILES = ["/", "/index.html", "/styles.css", "/movement-report.css", "/app.js"];
 
 self.addEventListener("install", event => {

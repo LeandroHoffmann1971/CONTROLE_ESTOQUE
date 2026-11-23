@@ -30,11 +30,9 @@
     <div class="workspace-label">OPERAÇÃO</div>
     <nav aria-label="Navegação principal">
       <ul class="nav-list">
-        <li data-role="GERENTE"><a class="nav-link active" href="#estoque" data-page="estoque" aria-current="page"><span class="nav-icon" aria-hidden="true">▦</span>Estoque</a></li>
+        <li><a class="nav-link active" href="#estoque" data-page="estoque" aria-current="page"><span class="nav-icon" aria-hidden="true">▦</span>Estoque</a></li>
         <li data-role="GERENTE"><a class="nav-link" href="#movimentacoes" data-page="movimentacoes"><span class="nav-icon" aria-hidden="true">↕</span>Movimentações</a></li>
         <li data-role="GERENTE"><a class="nav-link" href="#usuarios" data-page="usuarios"><span class="nav-icon" aria-hidden="true">♙</span>Usuários</a></li>
-        <li><a class="nav-link" href="#entrada" data-page="entrada"><span class="nav-icon" aria-hidden="true">＋</span>Registrar entrada</a></li>
-        <li><a class="nav-link" href="#saida" data-page="saida"><span class="nav-icon" aria-hidden="true">−</span>Registrar saída</a></li>
       </ul>
     </nav>
     <div class="sidebar-bottom"><span class="connection-dot"></span><span id="connection-label">Conectando...</span></div>
@@ -43,7 +41,7 @@
 
   <main class="main-content">
     <header class="topbar"><div class="breadcrumb">Operação <span>/</span> <strong id="breadcrumb-current">Estoque</strong></div><div class="today" id="today-label"></div></header>
-    <div id="inventory-view" data-role="GERENTE">
+    <div id="inventory-view">
     <section class="page-heading" id="estoque">
       <div><p class="eyebrow">VISÃO GERAL</p><h1>Estoque</h1><p class="subtitle">Acompanhe seus insumos e mantenha a operação em dia.</p></div>
       <button class="button button-primary" id="add-product"><span aria-hidden="true">＋</span> Novo produto</button>
@@ -91,15 +89,6 @@
       <section class="inventory-section users-list-section">
         <div class="section-heading"><div><h2>Usuários cadastrados</h2><p id="user-count">Carregando usuários...</p></div></div>
         <div id="users-cards" class="cards-grid"></div>
-      </section>
-    </section>
-
-    <section id="register-movement-view" hidden>
-      <div class="page-heading"><div><p class="eyebrow" id="register-eyebrow">MOVIMENTAÇÃO</p><h1 id="register-title">Registrar entrada</h1><p class="subtitle">Selecione um produto para registrar a movimentação.</p></div><button class="button button-quiet" id="refresh-register" title="Atualizar produtos" aria-label="Atualizar produtos">↻</button></div>
-      <section class="inventory-section">
-        <div class="section-heading"><div><h2>Produtos disponíveis</h2><p>O saldo atual é exibido em cada card.</p></div></div>
-        <div class="table-toolbar"><label class="search-box" for="register-search"><span aria-hidden="true">⌕</span><span class="search-label">Buscar</span><input id="register-search" type="search" placeholder="Produto ou código" aria-label="Buscar produto por descrição ou código"></label></div>
-        <div id="register-cards" class="cards-grid"></div>
       </section>
     </section>
 

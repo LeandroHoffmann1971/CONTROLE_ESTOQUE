@@ -62,12 +62,14 @@ app.Use(async (context, next) =>
 
 	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
 		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
-	var isProductLookup = HttpMethods.IsGet(context.Request.Method) && path == "/api/products/lookup";
+	var isProductRead = HttpMethods.IsGet(context.Request.Method) && path == "/api/products";
+	var isProductUpdate = HttpMethods.IsPut(context.Request.Method) &&
+		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$");
 	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
-	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductLookup && !isLogout)
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isProductUpdate && !isLogout)
 	{
 		context.Response.StatusCode = StatusCodes.Status403Forbidden;
-		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta tela está disponível apenas para gerentes." });
+		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta operação está disponível apenas para gerentes." });
 		return;
 	}
 
@@ -188,11 +190,6 @@ app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserS
 	.WithSummary("Exclui um usuário")
 	.WithDescription("Disponível somente para gerentes. Não permite excluir a própria conta ou o último gerente.");
 app.MapGet("/api/products", async (StockService service, CancellationToken token) => Results.Ok(await service.GetProductsAsync(token)));
-app.MapGet("/api/products/lookup", async (StockService service, CancellationToken token) =>
-	Results.Ok((await service.GetProductsAsync(token)).Select(product => new { product.Id, product.Name, product.Code, product.CurrentStock })))
-	.WithName("LookupProductsForMovement")
-	.WithSummary("Lista produtos para registro de movimentações")
-	.WithDescription("Disponível para gerentes e colaboradores; retorna ID, código, nome e saldo.");
 app.MapPost("/api/products", async (CreateProductRequest request, StockService service, CancellationToken token) =>
 	Results.Created("/api/products", await service.CreateProductAsync(request, token)));
 app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest request, StockService service, CancellationToken token) =>

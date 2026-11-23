@@ -909,3 +909,8 @@ th {
   color: #30352b;
   font-weight: 600;
 }
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

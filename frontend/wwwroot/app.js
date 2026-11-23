@@ -9,12 +9,9 @@ if (localStorage.getItem("despensa-data-version") !== LOCAL_DATA_VERSION) {
 const state = {
   products: JSON.parse(localStorage.getItem("despensa-products") || "[]"),
   movements: [],
-  registerProducts: [],
-  registerQuery: "",
   users: [],
   accessToken: null,
   user: null,
-  registerType: "entry",
   filter: "all",
   query: ""
 };
@@ -64,6 +61,12 @@ function isNetworkError(error) {
 
 async function syncPending() {
   const pending = getPending();
+  const canSyncPending = state.user?.status === "GERENTE" ||
+    pending.every(operation => ["updateProduct", "movement"].includes(operation.kind));
+  if (!canSyncPending) {
+    showToast("Algumas alterações pendentes só podem ser sincronizadas por um gerente.");
+    return;
+  }
   while (pending.length) {
     const operation = pending[0];
     try {
@@ -115,7 +118,7 @@ function setConnection(online, text) {
 }
 
 async function refreshData() {
-  if (!state.user || state.user.status !== "GERENTE") return;
+  if (!state.user) return;
   try {
     if (getPending().length) await syncPending();
     state.products = await api("/api/products");
@@ -203,46 +206,20 @@ async function loadUsers() {
   }
 }
 
-async function loadRegisterProducts() {
-  const cards = document.querySelector("#register-cards");
-  cards.innerHTML = `<p class="empty-state">Carregando produtos...</p>`;
-  try {
-    state.registerProducts = await api("/api/products/lookup");
-    renderRegisterProducts();
-  } catch (error) {
-    cards.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
-    showToast(`Não foi possível carregar os produtos: ${error.message}`);
-  }
-}
-
-function renderRegisterProducts() {
-  const cards = document.querySelector("#register-cards");
-  const query = state.registerQuery.toLocaleLowerCase("pt-BR");
-  const filtered = state.registerProducts.filter(product =>
-    `${product.name} ${product.code ?? ""}`.toLocaleLowerCase("pt-BR").includes(query));
-  cards.innerHTML = filtered.length ? filtered.map(product => `
-    <article class="data-card product-card">
-      <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(product.name)}</span></div></div>
-      <dl class="card-details"><div><dt>Estoque atual</dt><dd>${numberFormat.format(product.currentStock)}</dd></div></dl>
-      <div class="card-actions"><button class="button button-primary" data-register-id="${product.id}">${state.registerType === "entry" ? "Registrar entrada" : "Registrar saída"}</button></div>
-    </article>`).join("") : `<p class="empty-state">${state.registerProducts.length ? "Nenhum produto encontrado." : "Nenhum produto cadastrado."}</p>`;
-}
-
 function setPage() {
   if (!state.user) return;
   const allowedPages = state.user.status === "GERENTE"
-    ? ["estoque", "movimentacoes", "usuarios", "entrada", "saida"]
-    : ["entrada", "saida"];
+    ? ["estoque", "movimentacoes", "usuarios"]
+    : ["estoque"];
   let page = window.location.hash.slice(1);
   if (!allowedPages.includes(page)) {
     page = allowedPages[0];
     window.history.replaceState(null, "", `#${page}`);
   }
-  const labels = { estoque: "Estoque", movimentacoes: "Movimentações", usuarios: "Usuários", entrada: "Registrar entrada", saida: "Registrar saída" };
+  const labels = { estoque: "Estoque", movimentacoes: "Movimentações", usuarios: "Usuários" };
   document.querySelector("#inventory-view").hidden = page !== "estoque";
   document.querySelector("#movement-report-view").hidden = page !== "movimentacoes";
   document.querySelector("#users-view").hidden = page !== "usuarios";
-  document.querySelector("#register-movement-view").hidden = !["entrada", "saida"].includes(page);
   document.querySelector("#breadcrumb-current").textContent = labels[page];
   document.querySelectorAll(".nav-link").forEach(link => {
     const active = link.dataset.page === page;
@@ -252,17 +229,14 @@ function setPage() {
   });
   if (page === "movimentacoes") loadMovements();
   if (page === "usuarios") loadUsers();
-  if (page === "entrada" || page === "saida") {
-    state.registerType = page === "entrada" ? "entry" : "exit";
-    document.querySelector("#register-title").textContent = page === "entrada" ? "Registrar entrada" : "Registrar saída";
-    document.querySelector("#register-eyebrow").textContent = page === "entrada" ? "ENTRADA DE ESTOQUE" : "SAÍDA DE ESTOQUE";
-    loadRegisterProducts();
-  }
 }
 
 function productCard(product) {
   const low = isLow(product);
   const initials = product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR");
+  const managerActions = state.user?.status === "GERENTE"
+    ? `<button class="button button-quiet" data-action="delete" data-id="${product.id}">Excluir</button>`
+    : "";
   return `<article class="data-card product-card">
     <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(initials)}</span><span class="product-name">${escapeHtml(product.name)}</span></div><span class="status ${low ? "low" : "healthy"}">${low ? "Repor estoque" : "Saudável"}</span></div>
     <dl class="card-details">
@@ -275,7 +249,7 @@ function productCard(product) {
       <button class="button button-quiet" data-action="entry" data-id="${product.id}">＋ Entrada</button>
       <button class="button button-quiet" data-action="exit" data-id="${product.id}">− Saída</button>
       <button class="button button-quiet" data-action="edit" data-id="${product.id}">Editar</button>
-      <button class="button button-quiet" data-action="delete" data-id="${product.id}">Excluir</button>
+      ${managerActions}
     </div>
   </article>`;
 }
@@ -346,20 +320,19 @@ function showAuthenticatedApp(user) {
   document.querySelector("#login-view").hidden = true;
   document.querySelector("#app-shell").hidden = false;
   document.querySelector("#current-user-label").textContent = `${user.name} · ${user.status}`;
+  const isManager = user.status === "GERENTE";
+  const addProductButton = document.querySelector("#add-product");
+  addProductButton.disabled = !isManager;
+  addProductButton.title = isManager ? "" : "Apenas gerentes podem cadastrar produtos";
   document.querySelectorAll("[data-role]").forEach(element => {
     element.hidden = element.dataset.role !== user.status;
   });
-  document.querySelector(".nav-list").style.setProperty("--nav-columns", user.status === "GERENTE" ? "3" : "2");
-  if (user.status === "GERENTE") {
-    state.products = JSON.parse(localStorage.getItem("despensa-products") || "[]");
-    if (!["estoque", "movimentacoes", "usuarios", "entrada", "saida"].includes(window.location.hash.slice(1))) window.location.hash = "estoque";
-  } else {
-    state.products = [];
-    localStorage.removeItem("despensa-products");
-    if (!["entrada", "saida"].includes(window.location.hash.slice(1))) window.location.hash = "entrada";
-  }
+  document.querySelector(".nav-list").style.setProperty("--nav-columns", isManager ? "3" : "1");
+  state.products = JSON.parse(localStorage.getItem("despensa-products") || "[]");
+  const allowedPages = isManager ? ["estoque", "movimentacoes", "usuarios"] : ["estoque"];
+  if (!allowedPages.includes(window.location.hash.slice(1))) window.location.hash = "estoque";
   setPage();
-  if (user.status === "GERENTE") refreshData();
+  refreshData();
 }
 
 document.querySelector("#login-form").addEventListener("submit", async event => {
@@ -399,7 +372,6 @@ function showLogin(message = "") {
   state.user = null;
   state.products = [];
   state.movements = [];
-  state.registerProducts = [];
   document.querySelector("#app-shell").hidden = true;
   document.querySelector("#login-view").hidden = false;
   document.querySelector("#login-error").textContent = message;
@@ -418,13 +390,8 @@ document.querySelector('#user-edit-form input[name="cpf"]').addEventListener("in
 document.querySelector("#add-product").addEventListener("click", () => openProduct());
 document.querySelector("#refresh").addEventListener("click", refreshData);
 document.querySelector("#refresh-movements").addEventListener("click", loadMovements);
-document.querySelector("#refresh-register").addEventListener("click", loadRegisterProducts);
 window.addEventListener("hashchange", setPage);
 document.querySelector("#search").addEventListener("input", event => { state.query = event.target.value.trim(); render(); });
-document.querySelector("#register-search").addEventListener("input", event => {
-  state.registerQuery = event.target.value.trim();
-  renderRegisterProducts();
-});
 document.querySelectorAll(".filter").forEach(button => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;
   document.querySelectorAll(".filter").forEach(item => item.classList.toggle("active", item === button));
@@ -449,13 +416,6 @@ document.querySelector("#products-cards").addEventListener("click", async event 
       showToast("Exclusão salva neste dispositivo. Será sincronizada quando houver conexão.");
     }
   }
-});
-
-document.querySelector("#register-cards").addEventListener("click", event => {
-  const button = event.target.closest("[data-register-id]");
-  if (!button) return;
-  const product = state.registerProducts.find(item => item.id === button.dataset.registerId);
-  if (product) openMovement({ ...product, current_stock: product.currentStock }, state.registerType);
 });
 
 document.querySelector("#user-form").addEventListener("submit", async event => {
@@ -544,6 +504,10 @@ productForm.addEventListener("submit", async event => {
       Object.assign(state.products.find(product => product.id === data.id), { name: data.name, minimum_stock: Number(data.minimumStock) });
       queueOffline({ kind: "updateProduct", id: data.id, payload });
     } else {
+      if (state.user.status !== "GERENTE") {
+        document.querySelector("#product-error").textContent = "É necessário estar conectado para editar produtos.";
+        return;
+      }
       const localId = crypto.randomUUID();
       state.products.push({ id: localId, name: data.name, code: null, minimum_stock: Number(data.minimumStock), current_stock: Number(data.initialStock), created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       queueOffline({ kind: "createProduct", localId, payload });
@@ -557,9 +521,8 @@ productForm.addEventListener("submit", async event => {
 movementForm.addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(movementForm));
-  const product = state.products.find(item => item.id === data.productId) ||
-  state.registerProducts.find(item => item.id === data.productId);
-  const currentStock = product?.current_stock ?? product?.currentStock;
+  const product = state.products.find(item => item.id === data.productId);
+  const currentStock = product?.current_stock;
   if (data.type === "exit" && Number(data.quantity) > Number(currentStock)) {
     if (!window.confirm("A saída é maior que o saldo registrado. Deseja continuar?")) return;
   }
@@ -567,8 +530,7 @@ movementForm.addEventListener("submit", async event => {
     await api(`/api/products/${data.productId}/movements`, { method: "POST", body: JSON.stringify({ type: data.type, quantity: Number(data.quantity), reason: data.reason }) });
     movementDialog.close();
     showToast("Movimentação registrada.");
-    if (state.user.status === "GERENTE") await refreshData();
-    else await loadRegisterProducts();
+    await refreshData();
   } catch (error) {
     if (!isNetworkError(error)) { document.querySelector("#movement-error").textContent = error.message; return; }
     if (state.user.status !== "GERENTE") {
@@ -577,6 +539,10 @@ movementForm.addEventListener("submit", async event => {
     }
     const quantity = Number(data.quantity);
     const product = state.products.find(item => item.id === data.productId);
+    if (!product) {
+      document.querySelector("#movement-error").textContent = "Produto não encontrado no estoque local.";
+      return;
+    }
     product.current_stock = Number(product.current_stock) + (data.type === "entry" ? quantity : -quantity);
     queueOffline({ kind: "movement", productId: data.productId, payload: { type: data.type, quantity, reason: data.reason } });
     movementDialog.close();
