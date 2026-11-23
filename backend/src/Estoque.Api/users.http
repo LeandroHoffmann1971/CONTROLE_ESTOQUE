@@ -1,0 +1,39 @@
+@baseUrl = http://localhost:5080
+@accessToken = cole-o-accessToken-retornado-no-login
+
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "cpf": "83306390968",
+  "password": "logan1"
+}
+
+### Consultar usuários (somente gerente)
+GET {{baseUrl}}/api/users
+Authorization: Bearer {{accessToken}}
+
+### Consultar usuário por ID (somente gerente)
+GET {{baseUrl}}/api/users/1
+Authorization: Bearer {{accessToken}}
+
+### Cadastrar usuário (somente gerente)
+POST {{baseUrl}}/api/users
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Maria de Exemplo",
+  "cpf": "52998224725",
+  "status": "COLABORADOR",
+  "password": "abc123"
+}
+
+### Produtos disponíveis para movimentação
+GET {{baseUrl}}/api/products/lookup
+Authorization: Bearer {{accessToken}}
+
+### Encerrar sessão
+POST {{baseUrl}}/api/auth/logout
+Authorization: Bearer {{accessToken}}

@@ -46,6 +46,9 @@ O inicializador carrega as configurações de `.env` e inicia a API, que também
 - A trigger `apply_stock_movement` atualiza o saldo na mesma transação da inserção da movimentação. Saídas abaixo de zero são permitidas após confirmação na interface, preservando o alerta não bloqueante do requisito.
 - Produtos com movimentações não podem ser excluídos, para não apagar o histórico de auditoria.
 - O frontend mantém o catálogo em `localStorage`, usa service worker para abrir a interface sem rede e guarda operações pendentes localmente para sincronizar quando a conexão voltar. O código do produto é atribuído automaticamente pelo banco e a descrição deve ser única. A tela Movimentações lista descrição, tipo, quantidade, data e estoque atual, ordenada da mais recente para a mais antiga.
+- A tabela `users` armazena nome, CPF validado, data, perfil e hash PBKDF2 da senha. O script também cria o gerente Leandro Luís Hoffmann (CPF `833.063.909-68`, senha inicial `logan1`) e o colaborador José da Silva (CPF `666.785.520-91`, senha inicial `logan2`). O MVP não oferece troca de senha; atualize as credenciais de seed antes de uso real.
+- O login emite um token aleatório com validade de 8 horas, mantido somente na memória do servidor e no estado JavaScript da página. Recarregar a página encerra a sessão. A API valida o perfil em cada rota: colaboradores só consultam os produtos para registrar entradas/saídas e criar movimentações; as demais telas e operações exigem gerente.
+- Os produtos, movimentações e usuários são apresentados em cards que preservam os dados exibidos.
 
 ## Execução e validação
 
@@ -68,6 +71,6 @@ Abra `http://localhost:8080`. O `.dockerignore` impede que o `.env` seja incluí
 
 ## Segurança e escopo
 
-A chave secreta (ou `service_role` legada) ignora RLS e fica exclusivamente no servidor. Este MVP não implementa autenticação de operadores; mantenha a API em localhost ou em rede privada confiável. Não publique o serviço na internet antes de adicionar autenticação, autorização por perfil, proteção contra abuso e política de auditoria. Para implantação, use HTTPS e gerencie a chave por secret manager.
+A chave secreta (ou `service_role` legada) ignora RLS e fica exclusivamente no servidor. A autenticação do MVP usa tokens em memória e perfis, mas não inclui limitação de tentativas nem fluxo de recuperação/rotação de senha; mantenha a API em localhost ou em rede privada confiável. Para implantação pública, adicione esses controles, use HTTPS e gerencie a chave por secret manager.
 
-O banco ativa RLS sem políticas para clientes anon; o acesso deste backend ocorre usando a chave de serviço no servidor.
+O banco ativa RLS sem políticas para clientes anon; o acesso deste backend ocorre usando a chave de serviço no servidor. A autenticação local implementada mantém tokens em memória e não persiste sessões; para implantação pública, adicione limitação de tentativas, política de rotação de senha e demais controles operacionais.

@@ -62,6 +62,59 @@ $$;
 create index if not exists idx_stock_movements_product_created
     on public.stock_movements (product_id, created_at desc);
 
+create or replace function public.is_valid_cpf(cpf_input text)
+returns boolean
+language plpgsql
+immutable
+as $$
+declare
+    digits text := regexp_replace(coalesce(cpf_input, ''), '[^0-9]', '', 'g');
+    total integer;
+    remainder integer;
+    expected integer;
+    digit_position integer;
+    index_value integer;
+begin
+    if digits !~ '^[0-9]{11}$' or digits = repeat(substring(digits from 1 for 1), 11) then
+        return false;
+    end if;
+
+    for digit_position in 9..10 loop
+        total := 0;
+        for index_value in 0..(digit_position - 1) loop
+            total := total + substring(digits from index_value + 1 for 1)::integer * (digit_position + 1 - index_value);
+        end loop;
+        remainder := total % 11;
+        expected := case when remainder < 2 then 0 else 11 - remainder end;
+        if substring(digits from digit_position + 1 for 1)::integer <> expected then
+            return false;
+        end if;
+    end loop;
+    return true;
+end;
+$$;
+
+create table if not exists public.users (
+    id bigint generated always as identity primary key,
+    name varchar(150) not null check (char_length(btrim(name)) >= 3),
+    cpf varchar(14) not null unique check (cpf ~ '^[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}$' and public.is_valid_cpf(cpf)),
+    created_at date not null default current_date,
+    status varchar(12) not null check (status in ('GERENTE', 'COLABORADOR')),
+    password_hash text not null
+);
+
+insert into public.users (name, cpf, created_at, status, password_hash)
+values
+    ('Leandro Luís Hoffmann', '833.063.909-68', date '2026-11-23', 'GERENTE',
+     '$pbkdf2-sha256$100000$000102030405060708090a0b0c0d0e0f$2f5fe880ab397587fd47528ea71844d4cdb478fe80a45ad2e9a8cee4eea5f1e7'),
+    ('José da Silva', '666.785.520-91', date '2026-11-23', 'COLABORADOR',
+     '$pbkdf2-sha256$100000$101112131415161718191a1b1c1d1e1f$4776202a08bbe0b24e144cf05121978f220dacfb583485b5b90350c737e4719b')
+on conflict (cpf) do update
+set name = excluded.name,
+    created_at = excluded.created_at,
+    status = excluded.status,
+    password_hash = excluded.password_hash;
+
 create or replace function public.apply_stock_movement()
 returns trigger
 language plpgsql
@@ -98,5 +151,7 @@ $$;
 
 alter table public.products enable row level security;
 alter table public.stock_movements enable row level security;
+alter table public.users enable row level security;
 
 comment on table public.products is 'Acesso realizado pela API usando service role mantida somente no servidor.';
+comment on table public.users is 'Senhas armazenadas como hashes PBKDF2; acesso somente pela API usando service role no servidor.';

@@ -9,6 +9,11 @@ if (localStorage.getItem("despensa-data-version") !== LOCAL_DATA_VERSION) {
 const state = {
   products: JSON.parse(localStorage.getItem("despensa-products") || "[]"),
   movements: [],
+  registerProducts: [],
+  users: [],
+  accessToken: null,
+  user: null,
+  registerType: "entry",
   filter: "all",
   query: ""
 };
@@ -26,7 +31,9 @@ document.querySelector("#movement-report-date").textContent = `Estoque atual na 
 document.querySelector("#movement-current-date").textContent = `Posição consultada em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(currentDate)}.`;
 
 async function api(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!response.ok) {
     let message = `Erro ${response.status}`;
     try { const payload = await response.json(); message = payload.error || payload.detail || message; } catch { /* resposta sem JSON */ }
@@ -104,6 +111,7 @@ function setConnection(online, text) {
 }
 
 async function refreshData() {
+  if (!state.user || state.user.status !== "GERENTE") return;
   try {
     if (getPending().length) await syncPending();
     state.products = await api("/api/products");
@@ -132,64 +140,132 @@ function render() {
     return matchesQuery && (state.filter === "all" || isLow(product));
   });
   document.querySelector("#result-count").textContent = `${filtered.length} ${filtered.length === 1 ? "produto" : "produtos"}`;
-  document.querySelector("#products-body").innerHTML = filtered.length ? filtered.map(productRow).join("") : `<tr><td class="empty-state" colspan="6">${state.products.length ? "Nenhum produto encontrado." : "Seu catálogo ainda está vazio."}</td></tr>`;
+  document.querySelector("#products-cards").innerHTML = filtered.length ? filtered.map(productCard).join("") : `<p class="empty-state">${state.products.length ? "Nenhum produto encontrado." : "Seu catálogo ainda está vazio."}</p>`;
 }
 
 function renderMovements() {
   const sorted = [...state.movements].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   document.querySelector("#movement-count").textContent = `${sorted.length} ${sorted.length === 1 ? "movimentação" : "movimentações"}`;
-  document.querySelector("#movements-body").innerHTML = sorted.length ? sorted.map(movement => {
+  document.querySelector("#movements-cards").innerHTML = sorted.length ? sorted.map(movement => {
     const isEntry = movement.type === "entry";
     const label = isEntry ? "Entrada" : "Saída";
-    const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(movement.createdAt));
-    return `<tr>
-      <td data-label="Produto"><div class="product-cell"><span class="product-avatar">${escapeHtml(movement.productName.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(movement.productName)}</span></div></td>
-      <td data-label="Movimentação"><span class="movement-type ${isEntry ? "entry" : "exit"}">${label}</span></td>
-      <td data-label="Quantidade" class="movement-quantity ${isEntry ? "entry" : "exit"}">${isEntry ? "+" : "−"}${numberFormat.format(movement.quantity)}</td>
-      <td data-label="Data">${escapeHtml(date)}</td>
-      <td data-label="Estoque atual" class="stock-cell">${numberFormat.format(movement.currentStock)}</td>
-    </tr>`;
-  }).join("") : `<tr><td class="empty-state" colspan="5">Nenhuma movimentação registrada.</td></tr>`;
+    const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(movement.createdAt));
+    return `<article class="data-card movement-card">
+      <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(movement.productName.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(movement.productName)}</span></div><span class="movement-type ${isEntry ? "entry" : "exit"}">${label}</span></div>
+      <dl class="card-details">
+        <div><dt>Quantidade</dt><dd class="movement-quantity ${isEntry ? "entry" : "exit"}">${isEntry ? "+" : "−"}${numberFormat.format(movement.quantity)}</dd></div>
+        <div><dt>Data</dt><dd>${escapeHtml(date)}</dd></div>
+        <div><dt>Estoque atual</dt><dd>${numberFormat.format(movement.currentStock)}</dd></div>
+        <div><dt>Motivo</dt><dd>${escapeHtml(movement.reason || "—")}</dd></div>
+        <div><dt>Operador</dt><dd>${escapeHtml(movement.operatorName || "—")}</dd></div>
+      </dl>
+    </article>`;
+  }).join("") : `<p class="empty-state">Nenhuma movimentação registrada.</p>`;
 }
 
 async function loadMovements() {
-  const body = document.querySelector("#movements-body");
-  body.innerHTML = `<tr><td class="empty-state" colspan="5">Carregando movimentações...</td></tr>`;
+  const body = document.querySelector("#movements-cards");
+  body.innerHTML = `<p class="empty-state">Carregando movimentações...</p>`;
   try {
     state.movements = await api("/api/movements");
     renderMovements();
   } catch (error) {
-    body.innerHTML = `<tr><td class="empty-state" colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
     showToast(`Não foi possível carregar as movimentações: ${error.message}`);
   }
 }
 
+async function loadUsers() {
+  const cards = document.querySelector("#users-cards");
+  cards.innerHTML = `<p class="empty-state">Carregando usuários...</p>`;
+  try {
+    state.users = await api("/api/users");
+    document.querySelector("#user-count").textContent = `${state.users.length} ${state.users.length === 1 ? "usuário cadastrado" : "usuários cadastrados"}`;
+    cards.innerHTML = state.users.length ? state.users.map(user => {
+      const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(new Date(`${user.createdAt}T00:00:00Z`));
+      return `<article class="data-card user-card">
+        <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(user.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(user.name)}</span></div><span class="status ${user.status === "GERENTE" ? "healthy" : "low"}">${user.status === "GERENTE" ? "Gerente" : "Colaborador"}</span></div>
+        <dl class="card-details"><div><dt>ID</dt><dd>${user.id}</dd></div><div><dt>CPF</dt><dd>${escapeHtml(user.cpf)}</dd></div><div><dt>Data de cadastro</dt><dd>${escapeHtml(date)}</dd></div><div><dt>Status</dt><dd>${user.status === "GERENTE" ? "GERENTE" : "COLABORADOR"}</dd></div></dl>
+      </article>`;
+    }).join("") : `<p class="empty-state">Nenhum usuário cadastrado.</p>`;
+  } catch (error) {
+    cards.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+    showToast(`Não foi possível carregar os usuários: ${error.message}`);
+  }
+}
+
+async function loadRegisterProducts() {
+  const cards = document.querySelector("#register-cards");
+  cards.innerHTML = `<p class="empty-state">Carregando produtos...</p>`;
+  try {
+    state.registerProducts = await api("/api/products/lookup");
+    renderRegisterProducts();
+  } catch (error) {
+    cards.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+    showToast(`Não foi possível carregar os produtos: ${error.message}`);
+  }
+}
+
+function renderRegisterProducts() {
+  const cards = document.querySelector("#register-cards");
+  cards.innerHTML = state.registerProducts.length ? state.registerProducts.map(product => `
+    <article class="data-card product-card">
+      <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(product.name)}</span></div></div>
+      <dl class="card-details"><div><dt>Estoque atual</dt><dd>${numberFormat.format(product.currentStock)}</dd></div></dl>
+      <div class="card-actions"><button class="button button-primary" data-register-id="${product.id}">${state.registerType === "entry" ? "Registrar entrada" : "Registrar saída"}</button></div>
+    </article>`).join("") : `<p class="empty-state">Nenhum produto cadastrado.</p>`;
+}
+
 function setPage() {
-  const page = window.location.hash === "#movimentacoes" ? "movimentacoes" : "estoque";
-  const isMovements = page === "movimentacoes";
-  document.querySelector("#inventory-view").hidden = isMovements;
-  document.querySelector("#movement-report-view").hidden = !isMovements;
-  document.querySelector("#breadcrumb-current").textContent = isMovements ? "Movimentações" : "Estoque";
+  if (!state.user) return;
+  const allowedPages = state.user.status === "GERENTE"
+    ? ["estoque", "movimentacoes", "usuarios", "entrada", "saida"]
+    : ["entrada", "saida"];
+  let page = window.location.hash.slice(1);
+  if (!allowedPages.includes(page)) {
+    page = allowedPages[0];
+    window.history.replaceState(null, "", `#${page}`);
+  }
+  const labels = { estoque: "Estoque", movimentacoes: "Movimentações", usuarios: "Usuários", entrada: "Registrar entrada", saida: "Registrar saída" };
+  document.querySelector("#inventory-view").hidden = page !== "estoque";
+  document.querySelector("#movement-report-view").hidden = page !== "movimentacoes";
+  document.querySelector("#users-view").hidden = page !== "usuarios";
+  document.querySelector("#register-movement-view").hidden = !["entrada", "saida"].includes(page);
+  document.querySelector("#breadcrumb-current").textContent = labels[page];
   document.querySelectorAll(".nav-link").forEach(link => {
     const active = link.dataset.page === page;
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (isMovements) loadMovements();
+  if (page === "movimentacoes") loadMovements();
+  if (page === "usuarios") loadUsers();
+  if (page === "entrada" || page === "saida") {
+    state.registerType = page === "entrada" ? "entry" : "exit";
+    document.querySelector("#register-title").textContent = page === "entrada" ? "Registrar entrada" : "Registrar saída";
+    document.querySelector("#register-eyebrow").textContent = page === "entrada" ? "ENTRADA DE ESTOQUE" : "SAÍDA DE ESTOQUE";
+    loadRegisterProducts();
+  }
 }
 
-function productRow(product) {
+function productCard(product) {
   const low = isLow(product);
   const initials = product.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR");
-  return `<tr>
-    <td data-label="Produto"><div class="product-cell"><span class="product-avatar">${escapeHtml(initials)}</span><span class="product-name">${escapeHtml(product.name)}</span></div></td>
-    <td data-label="Código" class="code-cell">${escapeHtml(product.code ?? "—")}</td>
-    <td data-label="Estoque atual" class="stock-cell ${low ? "critical" : ""}">${numberFormat.format(product.current_stock)}</td>
-    <td data-label="Estoque mínimo">${numberFormat.format(product.minimum_stock)}</td>
-    <td data-label="Status"><span class="status ${low ? "low" : "healthy"}">${low ? "Repor estoque" : "Saudável"}</span></td>
-    <td data-label="Ações"><div class="row-actions"><button class="row-action" data-action="entry" data-id="${product.id}" title="Registrar entrada" aria-label="Registrar entrada de ${escapeHtml(product.name)}">＋</button><button class="row-action" data-action="exit" data-id="${product.id}" title="Registrar saída" aria-label="Registrar saída de ${escapeHtml(product.name)}">−</button><button class="row-action" data-action="edit" data-id="${product.id}" title="Editar produto" aria-label="Editar ${escapeHtml(product.name)}">✎</button><button class="row-action" data-action="delete" data-id="${product.id}" title="Excluir produto" aria-label="Excluir ${escapeHtml(product.name)}">×</button></div></td>
-  </tr>`;
+  return `<article class="data-card product-card">
+    <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(initials)}</span><span class="product-name">${escapeHtml(product.name)}</span></div><span class="status ${low ? "low" : "healthy"}">${low ? "Repor estoque" : "Saudável"}</span></div>
+    <dl class="card-details">
+      <div><dt>Código</dt><dd class="code-cell">${escapeHtml(product.code ?? "—")}</dd></div>
+      <div><dt>Estoque atual</dt><dd class="stock-cell ${low ? "critical" : ""}">${numberFormat.format(product.current_stock)}</dd></div>
+      <div><dt>Estoque mínimo</dt><dd>${numberFormat.format(product.minimum_stock)}</dd></div>
+      <div><dt>Status</dt><dd>${low ? "Abaixo do mínimo" : "Acima do mínimo"}</dd></div>
+    </dl>
+    <div class="card-actions">
+      <button class="button button-quiet" data-action="entry" data-id="${product.id}">＋ Entrada</button>
+      <button class="button button-quiet" data-action="exit" data-id="${product.id}">− Saída</button>
+      <button class="button button-quiet" data-action="edit" data-id="${product.id}">Editar</button>
+      <button class="button button-quiet" data-action="delete" data-id="${product.id}">Excluir</button>
+    </div>
+  </article>`;
 }
 
 function escapeHtml(value) {
@@ -213,15 +289,91 @@ function openMovement(product, type) {
   movementForm.reset();
   movementForm.elements.productId.value = product.id;
   movementForm.elements.type.value = type;
+  movementForm.elements.operatorName.value = state.user?.name || "";
   document.querySelector("#movement-title").textContent = type === "entry" ? "Registrar entrada" : "Registrar saída";
   document.querySelector("#movement-product-name").textContent = `${product.name} · saldo atual ${numberFormat.format(product.current_stock)}`;
   document.querySelector("#movement-error").textContent = "";
   movementDialog.showModal();
 }
 
+function formatCpf(value) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function showAuthenticatedApp(user) {
+  state.user = user;
+  document.querySelector("#login-view").hidden = true;
+  document.querySelector("#app-shell").hidden = false;
+  document.querySelector("#current-user-label").textContent = `${user.name} · ${user.status}`;
+  document.querySelectorAll("[data-role]").forEach(element => {
+    element.hidden = element.dataset.role !== user.status;
+  });
+  document.querySelector(".nav-list").style.setProperty("--nav-columns", user.status === "GERENTE" ? "3" : "2");
+  if (user.status === "GERENTE") {
+    state.products = JSON.parse(localStorage.getItem("despensa-products") || "[]");
+    if (!["estoque", "movimentacoes", "usuarios", "entrada", "saida"].includes(window.location.hash.slice(1))) window.location.hash = "estoque";
+  } else {
+    state.products = [];
+    localStorage.removeItem("despensa-products");
+    if (!["entrada", "saida"].includes(window.location.hash.slice(1))) window.location.hash = "entrada";
+  }
+  setPage();
+  if (user.status === "GERENTE") refreshData();
+}
+
+document.querySelector("#login-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const errorElement = document.querySelector("#login-error");
+  errorElement.textContent = "";
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    const result = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ cpf: data.cpf.replace(/\D/g, ""), password: data.password })
+    });
+    state.accessToken = result.accessToken;
+    showAuthenticatedApp(result.user);
+    form.reset();
+  } catch (error) {
+    errorElement.textContent = error.message === "Erro 401" ? "CPF ou senha inválidos." : error.message;
+  }
+});
+
+document.querySelector("#toggle-password").addEventListener("click", event => {
+  const input = document.querySelector('#login-form input[name="password"]');
+  const visible = input.type === "password";
+  input.type = visible ? "text" : "password";
+  event.currentTarget.textContent = visible ? "Ocultar" : "Mostrar";
+  event.currentTarget.setAttribute("aria-label", visible ? "Ocultar senha" : "Mostrar senha");
+});
+
+document.querySelector("#logout").addEventListener("click", async () => {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch { /* a sessão em memória também será descartada */ }
+  state.accessToken = null;
+  state.user = null;
+  state.products = [];
+  state.movements = [];
+  state.registerProducts = [];
+  document.querySelector("#app-shell").hidden = true;
+  document.querySelector("#login-view").hidden = false;
+  window.history.replaceState(null, "", window.location.pathname);
+});
+
+document.querySelector('#login-form input[name="cpf"]').addEventListener("input", event => {
+  event.target.value = formatCpf(event.target.value);
+});
+document.querySelector('#user-form input[name="cpf"]').addEventListener("input", event => {
+  event.target.value = formatCpf(event.target.value);
+});
 document.querySelector("#add-product").addEventListener("click", () => openProduct());
 document.querySelector("#refresh").addEventListener("click", refreshData);
 document.querySelector("#refresh-movements").addEventListener("click", loadMovements);
+document.querySelector("#refresh-register").addEventListener("click", loadRegisterProducts);
 window.addEventListener("hashchange", setPage);
 document.querySelector("#search").addEventListener("input", event => { state.query = event.target.value.trim(); render(); });
 document.querySelectorAll(".filter").forEach(button => button.addEventListener("click", () => {
@@ -231,7 +383,7 @@ document.querySelectorAll(".filter").forEach(button => button.addEventListener("
 }));
 document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
 
-document.querySelector("#products-body").addEventListener("click", async event => {
+document.querySelector("#products-cards").addEventListener("click", async event => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const product = state.products.find(item => item.id === button.dataset.id);
@@ -247,6 +399,32 @@ document.querySelector("#products-body").addEventListener("click", async event =
       render();
       showToast("Exclusão salva neste dispositivo. Será sincronizada quando houver conexão.");
     }
+  }
+});
+
+document.querySelector("#register-cards").addEventListener("click", event => {
+  const button = event.target.closest("[data-register-id]");
+  if (!button) return;
+  const product = state.registerProducts.find(item => item.id === button.dataset.registerId);
+  if (product) openMovement({ ...product, current_stock: product.currentStock }, state.registerType);
+});
+
+document.querySelector("#user-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  const error = document.querySelector("#user-error");
+  error.textContent = "";
+  try {
+    await api("/api/users", {
+      method: "POST",
+      body: JSON.stringify({ ...data, cpf: data.cpf.replace(/\D/g, "") })
+    });
+    form.reset();
+    showToast("Usuário cadastrado.");
+    await loadUsers();
+  } catch (exception) {
+    error.textContent = exception.message;
   }
 });
 
@@ -280,17 +458,24 @@ productForm.addEventListener("submit", async event => {
 movementForm.addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(movementForm));
-  const product = state.products.find(item => item.id === data.productId);
-  if (data.type === "exit" && Number(data.quantity) > Number(product?.current_stock)) {
+  const product = state.products.find(item => item.id === data.productId) ||
+  state.registerProducts.find(item => item.id === data.productId);
+  const currentStock = product?.current_stock ?? product?.currentStock;
+  if (data.type === "exit" && Number(data.quantity) > Number(currentStock)) {
     if (!window.confirm("A saída é maior que o saldo registrado. Deseja continuar?")) return;
   }
   try {
     await api(`/api/products/${data.productId}/movements`, { method: "POST", body: JSON.stringify({ type: data.type, quantity: Number(data.quantity), reason: data.reason, operatorName: data.operatorName }) });
     movementDialog.close();
     showToast("Movimentação registrada.");
-    await refreshData();
+    if (state.user.status === "GERENTE") await refreshData();
+    else await loadRegisterProducts();
   } catch (error) {
     if (!isNetworkError(error)) { document.querySelector("#movement-error").textContent = error.message; return; }
+    if (state.user.status !== "GERENTE") {
+      document.querySelector("#movement-error").textContent = "É necessário estar conectado para registrar movimentações.";
+      return;
+    }
     const quantity = Number(data.quantity);
     const product = state.products.find(item => item.id === data.productId);
     product.current_stock = Number(product.current_stock) + (data.type === "entry" ? quantity : -quantity);
@@ -303,5 +488,3 @@ movementForm.addEventListener("submit", async event => {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 window.addEventListener("online", refreshData);
-setPage();
-refreshData();

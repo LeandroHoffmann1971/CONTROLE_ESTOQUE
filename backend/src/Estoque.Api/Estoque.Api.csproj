@@ -8,4 +8,7 @@
     <ProjectReference Include="..\Estoque.Application\Estoque.Application.csproj" />
     <ProjectReference Include="..\Estoque.Infrastructure\Estoque.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+  </ItemGroup>
 </Project>

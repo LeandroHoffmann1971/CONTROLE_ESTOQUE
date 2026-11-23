@@ -1,5 +1,6 @@
 using Estoque.Application;
 using Estoque.Infrastructure;
+using Estoque.Api;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,8 +17,12 @@ var supabase = new SupabaseOptions
 };
 
 builder.Services.AddSingleton(supabase);
+builder.Services.AddOpenApi();
 builder.Services.AddHttpClient<IStockRepository, SupabaseStockRepository>();
+builder.Services.AddHttpClient<IUserRepository, SupabaseUserRepository>();
 builder.Services.AddScoped<StockService>();
+builder.Services.AddScoped<UserService>();
+builder.Services.AddSingleton<AccessTokenStore>();
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 	policy.WithOrigins(builder.Configuration["Frontend:Origin"] ?? "http://localhost:5500")
 		.AllowAnyHeader()
@@ -25,11 +30,48 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+	app.MapOpenApi();
+
 app.UseCors();
 var frontendRoot = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "frontend", "wwwroot"));
 var frontendFiles = new PhysicalFileProvider(frontendRoot);
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = frontendFiles });
 app.UseStaticFiles(new StaticFileOptions { FileProvider = frontendFiles });
+app.Use(async (context, next) =>
+{
+	var path = context.Request.Path;
+	if (!path.StartsWithSegments("/api") || path == "/api/health" ||
+		path == "/api/auth/login" || HttpMethods.IsOptions(context.Request.Method))
+	{
+		await next();
+		return;
+	}
+
+	var authorization = context.Request.Headers.Authorization.ToString();
+	var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+		? authorization["Bearer ".Length..].Trim()
+		: "";
+	var tokens = context.RequestServices.GetRequiredService<AccessTokenStore>();
+	if (token.Length == 0 || !tokens.TryGetUser(token, out var user) || user is null)
+	{
+		context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		await context.Response.WriteAsJsonAsync(new { title = "Não autenticado", status = 401, detail = "Faça login para continuar." });
+		return;
+	}
+
+	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
+		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
+	var isProductLookup = HttpMethods.IsGet(context.Request.Method) && path == "/api/products/lookup";
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductLookup)
+	{
+		context.Response.StatusCode = StatusCodes.Status403Forbidden;
+		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta tela está disponível apenas para gerentes." });
+		return;
+	}
+
+	await next();
+});
 app.Use(async (context, next) =>
 {
 	try
@@ -62,7 +104,59 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+app.MapPost("/api/auth/login", async (LoginRequest request, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+{
+	var user = await service.AuthenticateAsync(request, token);
+	if (user is null)
+		return Results.Unauthorized();
+	var accessToken = tokens.Create(user);
+	return Results.Ok(new LoginResponse(accessToken.Token, accessToken.ExpiresAt, user));
+})
+	.WithName("Login")
+	.WithSummary("Autentica um usuário")
+	.WithDescription("Valida CPF e senha e emite um token de acesso mantido em memória.");
+app.MapPost("/api/auth/logout", (HttpContext context, AccessTokenStore tokens) =>
+{
+	var authorization = context.Request.Headers.Authorization.ToString();
+	if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+		tokens.Revoke(authorization["Bearer ".Length..].Trim());
+	return Results.NoContent();
+})
+	.WithName("Logout")
+	.WithSummary("Encerra a sessão atual");
+app.MapGet("/api/users", async (UserService service, CancellationToken token) => Results.Ok(await service.GetUsersAsync(token)))
+	.WithName("GetUsers")
+	.WithSummary("Lista os usuários cadastrados")
+	.WithDescription("Disponível somente para gerentes.");
+app.MapGet("/api/users/{id:long}", async (long id, UserService service, CancellationToken token) =>
+{
+	var user = await service.GetByIdAsync(id, token);
+	return user is null ? Results.NotFound() : Results.Ok(user);
+})
+	.WithName("GetUserById")
+	.WithSummary("Consulta um usuário pelo ID")
+	.WithDescription("Disponível somente para gerentes.");
+app.MapPost("/api/users", async (CreateUserRequest request, UserService service, CancellationToken token) =>
+{
+	try
+	{
+		var user = await service.CreateAsync(request, token);
+		return Results.Created($"/api/users/{user.Id}", user);
+	}
+	catch (InvalidOperationException exception)
+	{
+		return Results.Conflict(new { error = exception.Message });
+	}
+})
+	.WithName("CreateUser")
+	.WithSummary("Cadastra um usuário")
+	.WithDescription("Disponível somente para gerentes. A senha é armazenada como hash PBKDF2.");
 app.MapGet("/api/products", async (StockService service, CancellationToken token) => Results.Ok(await service.GetProductsAsync(token)));
+app.MapGet("/api/products/lookup", async (StockService service, CancellationToken token) =>
+	Results.Ok((await service.GetProductsAsync(token)).Select(product => new { product.Id, product.Name, product.CurrentStock })))
+	.WithName("LookupProductsForMovement")
+	.WithSummary("Lista produtos para registro de movimentações")
+	.WithDescription("Disponível para gerentes e colaboradores; retorna somente ID, nome e saldo.");
 app.MapPost("/api/products", async (CreateProductRequest request, StockService service, CancellationToken token) =>
 	Results.Created("/api/products", await service.CreateProductAsync(request, token)));
 app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest request, StockService service, CancellationToken token) =>
