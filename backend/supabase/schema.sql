@@ -106,18 +106,6 @@ create table if not exists public.users (
     password_hash text not null
 );
 
-insert into public.users (name, cpf, created_at, status, password_hash)
-values
-    ('Leandro Luís Hoffmann', '833.063.909-68', date '2026-11-23', 'GERENTE',
-     '$pbkdf2-sha256$100000$000102030405060708090a0b0c0d0e0f$2f5fe880ab397587fd47528ea71844d4cdb478fe80a45ad2e9a8cee4eea5f1e7'),
-    ('José da Silva', '666.785.520-91', date '2026-11-23', 'COLABORADOR',
-     '$pbkdf2-sha256$100000$101112131415161718191a1b1c1d1e1f$4776202a08bbe0b24e144cf05121978f220dacfb583485b5b90350c737e4719b')
-on conflict (cpf) do update
-set name = excluded.name,
-    created_at = excluded.created_at,
-    status = excluded.status,
-    password_hash = excluded.password_hash;
-
 create or replace function public.apply_stock_movement()
 returns trigger
 language plpgsql

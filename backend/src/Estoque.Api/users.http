@@ -1,13 +1,16 @@
 @baseUrl = http://localhost:5080
 @accessToken = cole-o-accessToken-retornado-no-login
+@managerCpf = {{$dotenv INITIAL_MANAGER_CPF}}
+@managerPassword = {{$dotenv INITIAL_MANAGER_PASSWORD}}
+@userId = {{$dotenv TEST_USER_ID}}
 
 ### Login
 POST {{baseUrl}}/api/auth/login
 Content-Type: application/json
 
 {
-  "cpf": "83306390968",
-  "password": "logan1"
+  "cpf": "{{managerCpf}}",
+  "password": "{{managerPassword}}"
 }
 
 ### Consultar usuários (somente gerente)
@@ -15,7 +18,7 @@ GET {{baseUrl}}/api/users
 Authorization: Bearer {{accessToken}}
 
 ### Consultar usuário por ID (somente gerente)
-GET {{baseUrl}}/api/users/1
+GET {{baseUrl}}/api/users/{{userId}}
 Authorization: Bearer {{accessToken}}
 
 ### Cadastrar usuário (somente gerente)
@@ -24,26 +27,26 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "name": "Maria de Exemplo",
-  "cpf": "52998224725",
+  "name": "{{$dotenv TEST_USER_NAME}}",
+  "cpf": "{{$dotenv TEST_USER_CPF}}",
   "status": "COLABORADOR",
-  "password": "abc123"
+  "password": "{{$dotenv TEST_USER_PASSWORD}}"
 }
 
 ### Editar usuário (senha vazia mantém a senha atual)
-PUT {{baseUrl}}/api/users/2
+PUT {{baseUrl}}/api/users/{{userId}}
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "name": "José da Silva Atualizado",
-  "cpf": "66678552091",
+  "name": "{{$dotenv TEST_USER_NAME}}",
+  "cpf": "{{$dotenv TEST_USER_CPF}}",
   "status": "COLABORADOR",
   "password": ""
 }
 
 ### Excluir usuário (não pode ser a própria conta ou o último gerente)
-DELETE {{baseUrl}}/api/users/2
+DELETE {{baseUrl}}/api/users/{{userId}}
 Authorization: Bearer {{accessToken}}
 
 ### Formato inválido: espera erro 400
@@ -53,7 +56,7 @@ Content-Type: application/json
 
 {
   "currentPassword": "<senha-atual>",
-  "newPassword": "abc12!"
+  "newPassword": "not-valid"
 }
 
 ### Alterar a senha do usuário autenticado (esta chamada encerra as sessões ativas)
@@ -62,8 +65,8 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "currentPassword": "<senha-atual>",
-  "newPassword": "abc123"
+  "currentPassword": "{{managerPassword}}",
+  "newPassword": "{{$dotenv TEST_USER_PASSWORD}}"
 }
 
 ### Encerrar sessão (use um token atualizado após a troca de senha)

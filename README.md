@@ -1,77 +1,108 @@
 # Despensa | Controle de estoque
 
-Repositório do MVP de controle de estoque.
+MVP responsivo de controle de estoque. A interface foi reescrita em React e Tailwind CSS; a API ASP.NET Core e o schema do Supabase permanecem como backend da aplicação.
 
-MVP mobile-first para cadastro de produtos, saldo atual, níveis mínimos e registro de entradas e saídas. A API ASP.NET Core serve também o frontend HTML/CSS/JavaScript, e a persistência usa o Supabase REST API.
+## Telas
 
-## Estrutura
+As capturas abaixo mostram a interface executada localmente com conteúdo demonstrativo fictício.
 
-```text
-backend/
-  src/
-    Estoque.Domain/          Entidades de domínio
-    Estoque.Application/     Contratos, validações e casos de uso
-    Estoque.Infrastructure/  Repositório HTTP do Supabase
-    Estoque.Api/             Endpoints REST e configuração
-  supabase/schema.sql        Tabelas, índices, RLS e trigger de saldo
-frontend/
-  Program.cs                Servidor de arquivos do cliente
-  wwwroot/                   Interface web e arquivos estáticos
-Estoque.Frontend.csproj     Host estático independente (ASP.NET Core)
-```
+| Tela | Desktop | Mobile |
+|---|---|---|
+| Login | ![Login desktop](docs/prints/login-desktop.png) | ![Login mobile](docs/prints/login-mobile.png) |
+| Estoque | ![Estoque desktop](docs/prints/estoque-desktop.png) | ![Estoque mobile](docs/prints/estoque-mobile.png) |
+| Movimentações | ![Movimentações desktop](docs/prints/movimentacoes-desktop.png) | ![Movimentações mobile](docs/prints/movimentacoes-mobile.png) |
+| Usuários | ![Usuários desktop](docs/prints/usuarios-desktop.png) | ![Usuários mobile](docs/prints/usuarios-mobile.png) |
+| Alterar senha | ![Alterar senha desktop](docs/prints/senha-desktop.png) | ![Alterar senha mobile](docs/prints/senha-mobile.png) |
+| Registrar entrada | ![Entrada desktop](docs/prints/entrada-desktop.png) | ![Entrada mobile](docs/prints/entrada-mobile.png) |
+| Registrar saída | ![Saída desktop](docs/prints/saida-desktop.png) | ![Saída mobile](docs/prints/saida-mobile.png) |
 
-## Configuração do Supabase
+## Requisitos
 
-1. No SQL Editor do projeto Supabase `oaukruzqhijxgvjlyyqk`, execute `backend/supabase/schema.sql`.
-2. Em **Project Settings > API Keys**, crie/copiei uma chave secreta (`sb_secret_...`) e coloque-a em `SUPABASE_SECRET_KEY` no arquivo `.env` da raiz do projeto. A URL fica em `SUPABASE_URL`; o arquivo já vem preenchido com a URL configurada. Também é aceita a chave JWT legada `service_role` usando `SUPABASE_SERVICE_ROLE_KEY`.
-  A chave secreta ignora RLS e nunca deve ser colocada no JavaScript, no `appsettings.json` versionado, em variáveis `VITE_*`, enviada por chat ou commitada. O `.env` é ignorado pelo Git.
+- .NET SDK 9.0 ou superior.
+- Node.js 22.12 ou superior e npm.
+- PowerShell 5.1 ou superior para cadastrar o primeiro gerente.
+- Um projeto Supabase com acesso à chave secreta do backend.
 
-Ao aplicar esta atualização a um banco existente, o schema limpa os produtos e movimentações atuais uma única vez para converter `code` em numeração automática. A coluna antiga de códigos é substituída e os valores anteriores não são preservados.
+## Instalação e execução
 
-Execute o SQL no Supabase. Depois, inicie o MVP com um único comando:
+1. Crie o projeto Supabase e execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor. O script prepara as tabelas, índices, políticas e trigger; não insere usuários ou credenciais.
+2. Crie o arquivo local `.env` a partir do exemplo:
 
-```cmd
-run-mvp.cmd
-```
+   ```powershell
+   Copy-Item .env.example .env
+   ```
 
-O inicializador carrega as configurações de `.env` e inicia a API, que também serve a interface. Abra `http://localhost:5080`; a API e o frontend usam o mesmo endereço. Para encerrar, pressione `Ctrl+C` na janela do inicializador.
+   Preencha `SUPABASE_URL` e `SUPABASE_SECRET_KEY` no `.env`. A chave secreta é usada somente no servidor e não deve ser compartilhada ou versionada. Também é aceita a variável legada `SUPABASE_SERVICE_ROLE_KEY`. As variáveis `TEST_USER_*` são opcionais e usadas apenas pelos exemplos em `users.http`; utilize dados fictícios.
+3. Configure `INITIAL_MANAGER_NAME`, `INITIAL_MANAGER_CPF` e `INITIAL_MANAGER_PASSWORD` no `.env`, com os dados do gerente que você escolheu. O CPF deve ser válido e a senha deve conter 6 caracteres alfanuméricos. Cadastre o primeiro gerente uma única vez:
 
-## Camadas e dados
+   ```powershell
+   powershell -File .\backend\supabase\bootstrap-manager.ps1
+   ```
 
-- `Domain`: produtos e movimentações.
-- `Application`: contratos do repositório, validação e regras de negócio.
-- `Infrastructure`: integração server-side com a API REST do Supabase.
-- `Api`: endpoints HTTP, configuração e hospedagem dos arquivos estáticos do frontend em `frontend/wwwroot/`.
-- `Estoque.Frontend.csproj`: host estático independente, disponível para desenvolvimento isolado do frontend.
-- A trigger `apply_stock_movement` atualiza o saldo na mesma transação da inserção da movimentação. Saídas abaixo de zero são permitidas após confirmação na interface, preservando o alerta não bloqueante do requisito.
-- Produtos com movimentações não podem ser excluídos, para não apagar o histórico de auditoria.
-- O frontend mantém o catálogo em `localStorage`, usa service worker para abrir a interface sem rede e guarda operações pendentes localmente para sincronizar quando a conexão voltar. O código do produto é atribuído automaticamente pelo banco e a descrição deve ser única. A tela Movimentações lista descrição, tipo, quantidade, data e estoque atual, ordenada da mais recente para a mais antiga.
-- A tabela `users` armazena nome, CPF validado, data, perfil e hash PBKDF2 da senha. O script também cria o gerente Leandro Luís Hoffmann (CPF `833.063.909-68`, senha inicial `logan1`) e o colaborador José da Silva (CPF `666.785.520-91`, senha inicial `logan2`). Um gerente pode substituir as senhas pela tela de edição de usuários.
-- Gerentes podem editar e excluir usuários. Na edição, senha vazia mantém a senha atual; excluir a própria conta ou remover/rebaixar o último gerente é bloqueado. Alterações revogam as sessões ativas do usuário alterado.
-- O login emite um token aleatório com validade de 8 horas, mantido somente na memória do servidor e no estado JavaScript da página. Recarregar a página encerra a sessão. A API valida o perfil em cada rota: colaboradores só consultam os produtos para registrar entradas/saídas e criar movimentações; as demais telas e operações exigem gerente.
-- Os produtos, movimentações e usuários são apresentados em cards que preservam os dados exibidos.
+   O script gera o hash PBKDF2 no computador local e grava o usuário no Supabase usando a chave de serviço; não imprime nem armazena a senha em outro local. Depois, remova as três variáveis de bootstrap do `.env`.
+4. Compile a interface React para os arquivos estáticos servidos pela API:
 
-## Execução e validação
+   ```powershell
+   Push-Location .\frontend
+   npm ci
+   npm run build
+   Pop-Location
+   ```
+5. Inicie o MVP:
 
-Requer .NET SDK 9.0 ou superior:
+   ```powershell
+   .\run-mvp.cmd
+   ```
 
-```powershell
-dotnet build Estoque.slnx
-```
+   Abra <http://localhost:5080>. Encerre o processo com `Ctrl+C`.
 
-## Executar com Docker
+## Desenvolvimento da interface
 
-Com Docker instalado e o `.env` preenchido, construa e execute a imagem:
+Com as dependências instaladas e o `.env` configurado, inicie a API em um terminal e o servidor Vite em outro:
 
 ```powershell
+.\backend\run-api.ps1
+```
+
+```powershell
+Push-Location .\frontend
+npm run dev
+Pop-Location
+```
+
+Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para `http://localhost:5080`. Após alterações na interface, execute `npm run build` para atualizar os arquivos usados em produção.
+
+## Recursos e comportamento
+
+- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas.
+- Entradas e saídas são registradas a partir dos cards de produtos.
+- As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
+- O token de acesso existe somente no estado em memória da aplicação; recarregar a página encerra a sessão.
+- O catálogo e as operações offline pendentes podem ser mantidos localmente para sincronização. Nenhuma senha ou token de autenticação é armazenado no `localStorage`.
+- A interface foi projetada para 375, 768 e 1280 px, sem rolagem horizontal.
+
+## Build e Docker
+
+Valide o backend com:
+
+```powershell
+dotnet build .\Estoque.slnx
+```
+
+Gere os arquivos estáticos do frontend antes de construir a imagem:
+
+```powershell
+Push-Location .\frontend
+npm ci
+npm run build
+Pop-Location
 docker build -t controle-estoque .
-docker run --rm -p 8080:8080 --env-file .env controle-estoque
 ```
 
-Abra `http://localhost:8080`. O `.dockerignore` impede que o `.env` seja incluído na imagem. No Render, crie um Web Service usando o runtime Docker e configure `SUPABASE_URL` e `SUPABASE_SECRET_KEY` nas variáveis de ambiente do serviço; o container escuta a porta informada por `PORT`.
+Configure as variáveis de ambiente do Supabase no serviço ou container. A imagem serve a API e o frontend na porta `8080` (ou na porta definida por `PORT`).
 
-## Segurança e escopo
+## Segurança e dados
 
-A chave secreta (ou `service_role` legada) ignora RLS e fica exclusivamente no servidor. A autenticação do MVP usa tokens em memória e perfis, mas não inclui limitação de tentativas nem fluxo de recuperação/rotação de senha; mantenha a API em localhost ou em rede privada confiável. Para implantação pública, adicione esses controles, use HTTPS e gerencie a chave por secret manager.
+O arquivo `.env` contém configurações locais e é ignorado pelo Git. O schema SQL não inclui nomes, CPFs, senhas nem contas iniciais; o gerente inicial é cadastrado explicitamente pelo script de bootstrap, usando variáveis locais. A chave de serviço do Supabase ignora RLS e deve permanecer exclusivamente no servidor.
 
-O banco ativa RLS sem políticas para clientes anon; o acesso deste backend ocorre usando a chave de serviço no servidor. A autenticação local implementada mantém tokens em memória e não persiste sessões; para implantação pública, adicione limitação de tentativas, política de rotação de senha e demais controles operacionais.
+Os tokens de autenticação e os perfis são validados pela API. A autenticação local não inclui limitação de tentativas nem fluxo de recuperação de senha; para implantação pública, use HTTPS e adicione controles operacionais apropriados.
