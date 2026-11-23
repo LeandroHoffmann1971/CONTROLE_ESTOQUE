@@ -30,6 +30,22 @@ Content-Type: application/json
   "password": "abc123"
 }
 
+### Editar usuário (senha vazia mantém a senha atual)
+PUT {{baseUrl}}/api/users/2
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "José da Silva Atualizado",
+  "cpf": "66678552091",
+  "status": "COLABORADOR",
+  "password": ""
+}
+
+### Excluir usuário (não pode ser a própria conta ou o último gerente)
+DELETE {{baseUrl}}/api/users/2
+Authorization: Bearer {{accessToken}}
+
 ### Produtos disponíveis para movimentação
 GET {{baseUrl}}/api/products/lookup
 Authorization: Bearer {{accessToken}}

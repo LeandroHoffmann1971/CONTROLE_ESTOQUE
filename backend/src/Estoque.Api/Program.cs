@@ -63,13 +63,15 @@ app.Use(async (context, next) =>
 	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
 		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
 	var isProductLookup = HttpMethods.IsGet(context.Request.Method) && path == "/api/products/lookup";
-	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductLookup)
+	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductLookup && !isLogout)
 	{
 		context.Response.StatusCode = StatusCodes.Status403Forbidden;
 		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta tela está disponível apenas para gerentes." });
 		return;
 	}
 
+	context.Items["authenticated-user"] = user;
 	await next();
 });
 app.Use(async (context, next) =>
@@ -151,6 +153,40 @@ app.MapPost("/api/users", async (CreateUserRequest request, UserService service,
 	.WithName("CreateUser")
 	.WithSummary("Cadastra um usuário")
 	.WithDescription("Disponível somente para gerentes. A senha é armazenada como hash PBKDF2.");
+app.MapPut("/api/users/{id:long}", async (long id, UpdateUserRequest request, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+{
+	try
+	{
+		var user = await service.UpdateAsync(id, request, token);
+		tokens.RevokeUser(id);
+		return Results.Ok(user);
+	}
+	catch (InvalidOperationException exception)
+	{
+		return Results.Conflict(new { error = exception.Message });
+	}
+})
+	.WithName("UpdateUser")
+	.WithSummary("Atualiza um usuário")
+	.WithDescription("Disponível somente para gerentes. Deixe a senha vazia para mantê-la.");
+app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+{
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+		return Results.Unauthorized();
+	try
+	{
+		await service.DeleteAsync(id, currentUser.Id, token);
+		tokens.RevokeUser(id);
+		return Results.NoContent();
+	}
+	catch (InvalidOperationException exception)
+	{
+		return Results.Conflict(new { error = exception.Message });
+	}
+})
+	.WithName("DeleteUser")
+	.WithSummary("Exclui um usuário")
+	.WithDescription("Disponível somente para gerentes. Não permite excluir a própria conta ou o último gerente.");
 app.MapGet("/api/products", async (StockService service, CancellationToken token) => Results.Ok(await service.GetProductsAsync(token)));
 app.MapGet("/api/products/lookup", async (StockService service, CancellationToken token) =>
 	Results.Ok((await service.GetProductsAsync(token)).Select(product => new { product.Id, product.Name, product.CurrentStock })))

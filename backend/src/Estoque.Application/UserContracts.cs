@@ -7,6 +7,9 @@ namespace Estoque.Application;
 /// <summary>Dados para cadastrar um usuário.</summary>
 public sealed record CreateUserRequest(string Name, string Cpf, string Status, string Password);
 
+/// <summary>Dados editáveis de um usuário.</summary>
+public sealed record UpdateUserRequest(string Name, string Cpf, string Status, string? Password);
+
 /// <summary>Dados para autenticar um usuário.</summary>
 public sealed record LoginRequest(string Cpf, string Password);
 
@@ -22,6 +25,8 @@ public interface IUserRepository
     Task<User?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<User?> GetByCpfAsync(string cpf, CancellationToken cancellationToken);
     Task<User> CreateAsync(User user, CancellationToken cancellationToken);
+    Task<User> UpdateAsync(User user, CancellationToken cancellationToken);
+    Task<bool> DeleteAsync(long id, CancellationToken cancellationToken);
 }
 
 public sealed class UserService(IUserRepository repository)
@@ -42,27 +47,57 @@ public sealed class UserService(IUserRepository repository)
         var name = request.Name?.Trim() ?? "";
         var cpf = NormalizeCpf(request.Cpf);
         var status = request.Status?.Trim().ToUpperInvariant() ?? "";
-        ValidateName(name);
-        if (!IsValidCpf(cpf))
-            throw new ArgumentException("Informe um CPF válido.");
-        if (status is not ("GERENTE" or "COLABORADOR"))
-            throw new ArgumentException("Selecione GERENTE ou COLABORADOR.");
-        ValidatePassword(request.Password);
+        ValidateDetails(name, cpf, status);
+        ValidatePasswordAndReturn(request.Password);
         if (await repository.GetByCpfAsync(cpf, cancellationToken) is not null)
             throw new InvalidOperationException("Já existe um usuário cadastrado com este CPF.");
 
-        var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = Rfc2898DeriveBytes.Pbkdf2(
-            Encoding.UTF8.GetBytes(request.Password), salt, HashIterations, HashAlgorithmName.SHA256, 32);
         var user = await repository.CreateAsync(new User
         {
             Name = name,
             Cpf = cpf,
             CreatedAt = DateOnly.FromDateTime(DateTime.UtcNow),
             Status = status,
-            PasswordHash = FormatHash(salt, hash)
+            PasswordHash = HashPassword(request.Password)
         }, cancellationToken);
         return ToResponse(user);
+    }
+
+    public async Task<UserResponse> UpdateAsync(long id, UpdateUserRequest request, CancellationToken cancellationToken)
+    {
+        var user = await repository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException("Usuário não encontrado.");
+        var name = request.Name?.Trim() ?? "";
+        var cpf = NormalizeCpf(request.Cpf);
+        var status = request.Status?.Trim().ToUpperInvariant() ?? "";
+        ValidateDetails(name, cpf, status);
+
+        var cpfOwner = await repository.GetByCpfAsync(cpf, cancellationToken);
+        if (cpfOwner is not null && cpfOwner.Id != id)
+            throw new InvalidOperationException("Já existe um usuário cadastrado com este CPF.");
+
+        if (user.Status == "GERENTE" && status != "GERENTE" &&
+            await CountManagersAsync(cancellationToken) <= 1)
+            throw new InvalidOperationException("O sistema precisa manter pelo menos um gerente.");
+
+        if (!string.IsNullOrEmpty(request.Password))
+            user.PasswordHash = HashPassword(ValidatePasswordAndReturn(request.Password));
+        user.Name = name;
+        user.Cpf = cpf;
+        user.Status = status;
+        return ToResponse(await repository.UpdateAsync(user, cancellationToken));
+    }
+
+    public async Task DeleteAsync(long id, long currentUserId, CancellationToken cancellationToken)
+    {
+        if (id == currentUserId)
+            throw new InvalidOperationException("Não é possível excluir o usuário conectado.");
+        var user = await repository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException("Usuário não encontrado.");
+        if (user.Status == "GERENTE" && await CountManagersAsync(cancellationToken) <= 1)
+            throw new InvalidOperationException("O sistema precisa manter pelo menos um gerente.");
+        if (!await repository.DeleteAsync(id, cancellationToken))
+            throw new KeyNotFoundException("Usuário não encontrado.");
     }
 
     public async Task<UserResponse?> AuthenticateAsync(LoginRequest request, CancellationToken cancellationToken)
@@ -96,10 +131,31 @@ public sealed class UserService(IUserRepository repository)
             throw new ArgumentException("O nome deve ter no máximo 150 caracteres.");
     }
 
-    private static void ValidatePassword(string? password)
+    private static string ValidatePasswordAndReturn(string? password)
     {
         if (password is null || password.Length != 6 || password.Any(character => !char.IsAsciiLetterOrDigit(character)))
             throw new ArgumentException("A senha deve conter exatamente 6 caracteres alfanuméricos.");
+        return password;
+    }
+
+    private static void ValidateDetails(string name, string cpf, string status)
+    {
+        ValidateName(name);
+        if (!IsValidCpf(cpf))
+            throw new ArgumentException("Informe um CPF válido.");
+        if (status is not ("GERENTE" or "COLABORADOR"))
+            throw new ArgumentException("Selecione GERENTE ou COLABORADOR.");
+    }
+
+    private async Task<int> CountManagersAsync(CancellationToken cancellationToken) =>
+        (await repository.GetUsersAsync(cancellationToken)).Count(user => user.Status == "GERENTE");
+
+    private static string HashPassword(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(
+            Encoding.UTF8.GetBytes(password), salt, HashIterations, HashAlgorithmName.SHA256, 32);
+        return FormatHash(salt, hash);
     }
 
     private static bool IsValidCpf(string cpf)

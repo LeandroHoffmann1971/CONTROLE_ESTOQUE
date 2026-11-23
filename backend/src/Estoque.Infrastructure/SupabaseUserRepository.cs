@@ -30,7 +30,7 @@ public sealed class SupabaseUserRepository : IUserRepository
             .Select(Map).ToArray();
 
     public async Task<Estoque.Domain.User?> GetByIdAsync(long id, CancellationToken cancellationToken) =>
-        (await GetListAsync($"users?id=eq.{id}&select=id,name,cpf,created_at,status", cancellationToken))
+        (await GetListAsync($"users?id=eq.{id}&select=*", cancellationToken))
             .Select(Map).FirstOrDefault();
 
     public async Task<User?> GetByCpfAsync(string cpf, CancellationToken cancellationToken) =>
@@ -53,6 +53,37 @@ public sealed class SupabaseUserRepository : IUserRepository
         {
             throw new InvalidOperationException("Já existe um usuário cadastrado com este CPF.", exception);
         }
+    }
+
+    public async Task<Estoque.Domain.User> UpdateAsync(Estoque.Domain.User user, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await SendListAsync(HttpMethod.Patch, $"users?id=eq.{user.Id}", new
+            {
+                name = user.Name,
+                cpf = user.Cpf,
+                status = user.Status,
+                password_hash = user.PasswordHash
+            }, cancellationToken);
+            return updated.Count == 0
+                ? throw new KeyNotFoundException("Usuário não encontrado.")
+                : Map(updated.Single());
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            throw new InvalidOperationException("Já existe um usuário cadastrado com este CPF.", exception);
+        }
+    }
+
+    public async Task<bool> DeleteAsync(long id, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"users?id=eq.{id}&select=id");
+        request.Headers.Add("Prefer", "return=representation");
+        using var response = await http.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var deleted = await response.Content.ReadFromJsonAsync<List<SupabaseUser>>(JsonOptions, cancellationToken) ?? [];
+        return deleted.Count > 0;
     }
 
     private async Task<IReadOnlyList<SupabaseUser>> GetListAsync(string path, CancellationToken cancellationToken)

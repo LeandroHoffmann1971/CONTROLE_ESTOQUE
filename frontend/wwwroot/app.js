@@ -20,8 +20,10 @@ const state = {
 const API_BASE = window.location.port === "5500" ? "http://localhost:5080" : "";
 const productDialog = document.querySelector("#product-dialog");
 const movementDialog = document.querySelector("#movement-dialog");
+const userDialog = document.querySelector("#user-dialog");
 const productForm = document.querySelector("#product-form");
 const movementForm = document.querySelector("#movement-form");
+const userEditForm = document.querySelector("#user-edit-form");
 const numberFormat = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
 
 const currentDate = new Date();
@@ -183,9 +185,14 @@ async function loadUsers() {
     document.querySelector("#user-count").textContent = `${state.users.length} ${state.users.length === 1 ? "usuário cadastrado" : "usuários cadastrados"}`;
     cards.innerHTML = state.users.length ? state.users.map(user => {
       const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(new Date(`${user.createdAt}T00:00:00Z`));
+      const isCurrentUser = user.id === state.user.id;
       return `<article class="data-card user-card">
         <div class="card-title-row"><div class="product-cell"><span class="product-avatar">${escapeHtml(user.name.trim().slice(0, 1).toLocaleUpperCase("pt-BR"))}</span><span class="product-name">${escapeHtml(user.name)}</span></div><span class="status ${user.status === "GERENTE" ? "healthy" : "low"}">${user.status === "GERENTE" ? "Gerente" : "Colaborador"}</span></div>
         <dl class="card-details"><div><dt>ID</dt><dd>${user.id}</dd></div><div><dt>CPF</dt><dd>${escapeHtml(user.cpf)}</dd></div><div><dt>Data de cadastro</dt><dd>${escapeHtml(date)}</dd></div><div><dt>Status</dt><dd>${user.status === "GERENTE" ? "GERENTE" : "COLABORADOR"}</dd></div></dl>
+        <div class="card-actions">
+          <button class="button button-quiet" data-user-action="edit" data-id="${user.id}">Editar</button>
+          <button class="button button-quiet" data-user-action="delete" data-id="${user.id}" ${isCurrentUser ? "disabled title=\"Não é possível excluir sua própria conta\"" : ""}>Excluir</button>
+        </div>
       </article>`;
     }).join("") : `<p class="empty-state">Nenhum usuário cadastrado.</p>`;
   } catch (error) {
@@ -296,6 +303,16 @@ function openMovement(product, type) {
   movementDialog.showModal();
 }
 
+function openUserEdit(user) {
+  userEditForm.reset();
+  userEditForm.elements.id.value = user.id;
+  userEditForm.elements.name.value = user.name;
+  userEditForm.elements.cpf.value = user.cpf;
+  userEditForm.elements.status.value = user.status;
+  document.querySelector("#user-edit-error").textContent = "";
+  userDialog.showModal();
+}
+
 function formatCpf(value) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 3) return digits;
@@ -354,6 +371,10 @@ document.querySelector("#toggle-password").addEventListener("click", event => {
 
 document.querySelector("#logout").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch { /* a sessão em memória também será descartada */ }
+  showLogin();
+});
+
+function showLogin(message = "") {
   state.accessToken = null;
   state.user = null;
   state.products = [];
@@ -361,13 +382,17 @@ document.querySelector("#logout").addEventListener("click", async () => {
   state.registerProducts = [];
   document.querySelector("#app-shell").hidden = true;
   document.querySelector("#login-view").hidden = false;
+  document.querySelector("#login-error").textContent = message;
   window.history.replaceState(null, "", window.location.pathname);
-});
+}
 
 document.querySelector('#login-form input[name="cpf"]').addEventListener("input", event => {
   event.target.value = formatCpf(event.target.value);
 });
 document.querySelector('#user-form input[name="cpf"]').addEventListener("input", event => {
+  event.target.value = formatCpf(event.target.value);
+});
+document.querySelector('#user-edit-form input[name="cpf"]').addEventListener("input", event => {
   event.target.value = formatCpf(event.target.value);
 });
 document.querySelector("#add-product").addEventListener("click", () => openProduct());
@@ -422,6 +447,56 @@ document.querySelector("#user-form").addEventListener("submit", async event => {
     });
     form.reset();
     showToast("Usuário cadastrado.");
+    await loadUsers();
+  } catch (exception) {
+    error.textContent = exception.message;
+  }
+});
+
+document.querySelector("#users-cards").addEventListener("click", async event => {
+  const button = event.target.closest("[data-user-action]");
+  if (!button) return;
+  const user = state.users.find(item => item.id === Number(button.dataset.id));
+  if (!user || button.disabled) return;
+
+  if (button.dataset.userAction === "edit") {
+    openUserEdit(user);
+    return;
+  }
+  if (button.dataset.userAction !== "delete" ||
+      !window.confirm(`Excluir o usuário "${user.name}"? Esta ação não pode ser desfeita.`))
+    return;
+
+  try {
+    await api(`/api/users/${user.id}`, { method: "DELETE" });
+    showToast("Usuário excluído.");
+    await loadUsers();
+  } catch (error) {
+    showToast(`Não foi possível excluir o usuário: ${error.message}`);
+  }
+});
+
+userEditForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(userEditForm));
+  const error = document.querySelector("#user-edit-error");
+  error.textContent = "";
+  try {
+    const updatedUser = await api(`/api/users/${data.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: data.name,
+        cpf: data.cpf.replace(/\D/g, ""),
+        status: data.status,
+        password: data.password
+      })
+    });
+    userDialog.close();
+    if (updatedUser.id === state.user.id) {
+      showLogin("Cadastro atualizado. Entre novamente com suas novas credenciais.");
+      return;
+    }
+    showToast("Cadastro de usuário atualizado.");
     await loadUsers();
   } catch (exception) {
     error.textContent = exception.message;
@@ -486,5 +561,13 @@ movementForm.addEventListener("submit", async event => {
   }
 });
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  const alreadyControlled = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (alreadyControlled) window.location.reload();
+  }, { once: true });
+  navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
+    .then(registration => registration.update())
+    .catch(() => {});
+}
 window.addEventListener("online", refreshData);

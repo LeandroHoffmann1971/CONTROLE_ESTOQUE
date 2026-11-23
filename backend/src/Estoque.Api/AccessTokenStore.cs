@@ -43,6 +43,16 @@ public sealed class AccessTokenStore
             sessions.Remove(token);
     }
 
+    public void RevokeUser(long userId)
+    {
+        lock (gate)
+        {
+            foreach (var token in sessions.Where(item => item.Value.User.Id == userId)
+                         .Select(item => item.Key).ToArray())
+                sessions.Remove(token);
+        }
+    }
+
     private void RemoveExpiredTokens()
     {
         foreach (var token in sessions.Where(item => item.Value.ExpiresAt <= DateTimeOffset.UtcNow)
