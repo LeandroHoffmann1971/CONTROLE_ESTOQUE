@@ -33,6 +33,7 @@
         <li><a class="nav-link active" href="#estoque" data-page="estoque" aria-current="page"><span class="nav-icon" aria-hidden="true">▦</span>Estoque</a></li>
         <li data-role="GERENTE"><a class="nav-link" href="#movimentacoes" data-page="movimentacoes"><span class="nav-icon" aria-hidden="true">↕</span>Movimentações</a></li>
         <li data-role="GERENTE"><a class="nav-link" href="#usuarios" data-page="usuarios"><span class="nav-icon" aria-hidden="true">♙</span>Usuários</a></li>
+        <li><a class="nav-link" href="#senha" data-page="senha"><span class="nav-icon" aria-hidden="true">⌑</span>Alterar senha</a></li>
       </ul>
     </nav>
     <div class="sidebar-bottom"><span class="connection-dot"></span><span id="connection-label">Conectando...</span></div>
@@ -89,6 +90,20 @@
       <section class="inventory-section users-list-section">
         <div class="section-heading"><div><h2>Usuários cadastrados</h2><p id="user-count">Carregando usuários...</p></div></div>
         <div id="users-cards" class="cards-grid"></div>
+      </section>
+    </section>
+
+    <section id="password-view" hidden>
+      <div class="page-heading"><div><p class="eyebrow">SEGURANÇA</p><h1>Alterar senha</h1><p class="subtitle">Atualize a senha da sua conta.</p></div></div>
+      <section class="inventory-section">
+        <div class="section-heading"><div><h2>Nova senha</h2><p>Use 6 caracteres alfanuméricos.</p></div></div>
+        <form id="password-form" class="user-form password-change-form">
+          <label>Senha atual<input name="currentPassword" type="password" required autocomplete="current-password"></label>
+          <label>Nova senha<input name="newPassword" type="password" required minlength="6" pattern="[A-Za-z0-9]{6}" autocomplete="new-password"></label>
+          <label>Confirmar nova senha<input name="confirmPassword" type="password" required autocomplete="new-password"></label>
+          <div class="form-error" id="password-error" role="alert"></div>
+          <button class="button button-primary" type="submit">Alterar senha</button>
+        </form>
       </section>
     </section>
 

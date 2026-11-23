@@ -209,17 +209,18 @@ async function loadUsers() {
 function setPage() {
   if (!state.user) return;
   const allowedPages = state.user.status === "GERENTE"
-    ? ["estoque", "movimentacoes", "usuarios"]
-    : ["estoque"];
+    ? ["estoque", "movimentacoes", "usuarios", "senha"]
+    : ["estoque", "senha"];
   let page = window.location.hash.slice(1);
   if (!allowedPages.includes(page)) {
     page = allowedPages[0];
     window.history.replaceState(null, "", `#${page}`);
   }
-  const labels = { estoque: "Estoque", movimentacoes: "Movimentações", usuarios: "Usuários" };
+  const labels = { estoque: "Estoque", movimentacoes: "Movimentações", usuarios: "Usuários", senha: "Alterar senha" };
   document.querySelector("#inventory-view").hidden = page !== "estoque";
   document.querySelector("#movement-report-view").hidden = page !== "movimentacoes";
   document.querySelector("#users-view").hidden = page !== "usuarios";
+  document.querySelector("#password-view").hidden = page !== "senha";
   document.querySelector("#breadcrumb-current").textContent = labels[page];
   document.querySelectorAll(".nav-link").forEach(link => {
     const active = link.dataset.page === page;
@@ -314,6 +315,7 @@ function bindPasswordValidation(input, optional) {
 
 bindPasswordValidation(document.querySelector('#user-form input[name="password"]'), false);
 bindPasswordValidation(document.querySelector('#user-edit-form input[name="password"]'), true);
+bindPasswordValidation(document.querySelector('#password-form input[name="newPassword"]'), false);
 
 function showAuthenticatedApp(user) {
   state.user = user;
@@ -327,9 +329,9 @@ function showAuthenticatedApp(user) {
   document.querySelectorAll("[data-role]").forEach(element => {
     element.hidden = element.dataset.role !== user.status;
   });
-  document.querySelector(".nav-list").style.setProperty("--nav-columns", isManager ? "3" : "1");
+  document.querySelector(".nav-list").style.setProperty("--nav-columns", isManager ? "4" : "2");
   state.products = JSON.parse(localStorage.getItem("despensa-products") || "[]");
-  const allowedPages = isManager ? ["estoque", "movimentacoes", "usuarios"] : ["estoque"];
+  const allowedPages = isManager ? ["estoque", "movimentacoes", "usuarios", "senha"] : ["estoque", "senha"];
   if (!allowedPages.includes(window.location.hash.slice(1))) window.location.hash = "estoque";
   setPage();
   refreshData();
@@ -351,6 +353,28 @@ document.querySelector("#login-form").addEventListener("submit", async event => 
     form.reset();
   } catch (error) {
     errorElement.textContent = error.message === "Erro 401" ? "CPF ou senha inválidos." : error.message;
+  }
+});
+
+document.querySelector("#password-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  const error = document.querySelector("#password-error");
+  error.textContent = "";
+  if (data.newPassword !== data.confirmPassword) {
+    error.textContent = "A confirmação da senha não confere.";
+    return;
+  }
+  try {
+    await api("/api/auth/password", {
+      method: "PUT",
+      body: JSON.stringify({ currentPassword: data.currentPassword, newPassword: data.newPassword })
+    });
+    form.reset();
+    showLogin("Senha alterada. Entre novamente com a nova senha.");
+  } catch (exception) {
+    error.textContent = exception.message;
   }
 });
 

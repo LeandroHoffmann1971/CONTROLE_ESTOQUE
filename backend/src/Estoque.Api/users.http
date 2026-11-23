@@ -46,10 +46,26 @@ Content-Type: application/json
 DELETE {{baseUrl}}/api/users/2
 Authorization: Bearer {{accessToken}}
 
-### Produtos disponíveis para movimentação
-GET {{baseUrl}}/api/products/lookup
+### Formato inválido: espera erro 400
+PUT {{baseUrl}}/api/auth/password
 Authorization: Bearer {{accessToken}}
+Content-Type: application/json
 
-### Encerrar sessão
+{
+  "currentPassword": "<senha-atual>",
+  "newPassword": "abc12!"
+}
+
+### Alterar a senha do usuário autenticado (esta chamada encerra as sessões ativas)
+PUT {{baseUrl}}/api/auth/password
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "<senha-atual>",
+  "newPassword": "abc123"
+}
+
+### Encerrar sessão (use um token atualizado após a troca de senha)
 POST {{baseUrl}}/api/auth/logout
 Authorization: Bearer {{accessToken}}

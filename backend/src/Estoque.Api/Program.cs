@@ -65,8 +65,9 @@ app.Use(async (context, next) =>
 	var isProductRead = HttpMethods.IsGet(context.Request.Method) && path == "/api/products";
 	var isProductUpdate = HttpMethods.IsPut(context.Request.Method) &&
 		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$");
+	var isPasswordChange = HttpMethods.IsPut(context.Request.Method) && path == "/api/auth/password";
 	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
-	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isProductUpdate && !isLogout)
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isProductUpdate && !isPasswordChange && !isLogout)
 	{
 		context.Response.StatusCode = StatusCodes.Status403Forbidden;
 		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta operação está disponível apenas para gerentes." });
@@ -128,6 +129,21 @@ app.MapPost("/api/auth/logout", (HttpContext context, AccessTokenStore tokens) =
 })
 	.WithName("Logout")
 	.WithSummary("Encerra a sessão atual");
+app.MapPut("/api/auth/password", async (ChangePasswordRequest request, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+{
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+		return Results.Unauthorized();
+	await service.ChangePasswordAsync(currentUser.Id, request, token);
+	tokens.RevokeUser(currentUser.Id);
+	return Results.NoContent();
+})
+	.WithName("ChangePassword")
+	.WithSummary("Altera a senha do usuário autenticado")
+	.WithDescription("Valida a senha atual e grava a nova senha com hash PBKDF2. Encerra as sessões ativas, exigindo novo login.")
+	.Produces(StatusCodes.Status204NoContent)
+	.Produces(StatusCodes.Status400BadRequest)
+	.Produces(StatusCodes.Status401Unauthorized)
+	.Produces(StatusCodes.Status404NotFound);
 app.MapGet("/api/users", async (UserService service, CancellationToken token) => Results.Ok(await service.GetUsersAsync(token)))
 	.WithName("GetUsers")
 	.WithSummary("Lista os usuários cadastrados")

@@ -13,6 +13,9 @@ public sealed record UpdateUserRequest(string Name, string Cpf, string Status, s
 /// <summary>Dados para autenticar um usuário.</summary>
 public sealed record LoginRequest(string Cpf, string Password);
 
+/// <summary>Dados para alterar a senha do usuário autenticado.</summary>
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
 /// <summary>Dados públicos do usuário autenticado.</summary>
 public sealed record UserResponse(long Id, string Name, string Cpf, DateOnly CreatedAt, string Status);
 
@@ -109,6 +112,21 @@ public sealed class UserService(IUserRepository repository)
         if (user is null || !VerifyPassword(request.Password, user.PasswordHash))
             return null;
         return ToResponse(user);
+    }
+
+    public async Task ChangePasswordAsync(long id, ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        var newPassword = ValidatePasswordAndReturn(request.NewPassword);
+        if (string.IsNullOrEmpty(request.CurrentPassword))
+            throw new ArgumentException("Informe a senha atual.");
+
+        var user = await repository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException("Usuário não encontrado.");
+        if (!VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            throw new ArgumentException("A senha atual está incorreta.");
+
+        user.PasswordHash = HashPassword(newPassword);
+        await repository.UpdateAsync(user, cancellationToken);
     }
 
     public static string NormalizeCpf(string? cpf)

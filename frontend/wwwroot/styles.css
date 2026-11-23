@@ -438,6 +438,15 @@ th {
   margin-top: 18px;
 }
 
+.password-change-form {
+  grid-template-columns: 1fr;
+  max-width: 430px;
+}
+
+.password-change-form .form-error {
+  min-height: 18px;
+}
+
 .user-form label,
 .login-card label {
   display: block;
