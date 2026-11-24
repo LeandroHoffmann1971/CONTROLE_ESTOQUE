@@ -13,10 +13,16 @@ export default defineConfig({
   server: {
     host: "localhost",
     port: 5500,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      "/api": "http://localhost:5080"
+    }
   },
   build: {
     outDir: resolve(root, "wwwroot"),
     emptyOutDir: true
+  },
+  test: {
+    environment: "jsdom"
   }
 });

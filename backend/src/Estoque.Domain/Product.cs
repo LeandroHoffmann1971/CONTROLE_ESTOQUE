@@ -24,4 +24,13 @@ public sealed class Product
 
     [JsonPropertyName("updated_at")]
     public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("is_active")]
+    public bool IsActive { get; set; } = true;
+
+    [JsonPropertyName("client_operation_id")]
+    public Guid? ClientOperationId { get; set; }
+
+    [JsonPropertyName("created_by")]
+    public long? CreatedBy { get; set; }
 }

@@ -8,7 +8,7 @@ namespace Estoque.Application;
 public sealed record CreateUserRequest(string Name, string Cpf, string Status, string Password);
 
 /// <summary>Dados editáveis de um usuário.</summary>
-public sealed record UpdateUserRequest(string Name, string Cpf, string Status, string? Password);
+public sealed record UpdateUserRequest(string Name, string Cpf, string Status, string? Password, bool? IsActive = null);
 
 /// <summary>Dados para autenticar um usuário.</summary>
 public sealed record LoginRequest(string Cpf, string Password);
@@ -17,31 +17,32 @@ public sealed record LoginRequest(string Cpf, string Password);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
 /// <summary>Dados públicos do usuário autenticado.</summary>
-public sealed record UserResponse(long Id, string Name, string Cpf, DateOnly CreatedAt, string Status);
+public sealed record UserResponse(long Id, string Name, string Cpf, DateOnly CreatedAt, string Status, bool IsActive);
 
 /// <summary>Token de acesso e perfil retornados após o login.</summary>
 public sealed record LoginResponse(string AccessToken, DateTimeOffset ExpiresAt, UserResponse User);
 
 public interface IUserRepository
 {
-    Task<IReadOnlyList<User>> GetUsersAsync(CancellationToken cancellationToken);
-    Task<User?> GetByIdAsync(long id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<User>> GetUsersAsync(bool includeInactive, CancellationToken cancellationToken);
+    Task<User?> GetByIdAsync(long id, bool includeInactive, CancellationToken cancellationToken);
     Task<User?> GetByCpfAsync(string cpf, CancellationToken cancellationToken);
+    Task<bool> RecordLoginAttemptAsync(long? userId, string cpfHash, bool success, string? ip, string? userAgent, CancellationToken cancellationToken);
     Task<User> CreateAsync(User user, CancellationToken cancellationToken);
     Task<User> UpdateAsync(User user, CancellationToken cancellationToken);
-    Task<bool> DeleteAsync(long id, CancellationToken cancellationToken);
+    Task<bool?> DeleteAsync(long id, CancellationToken cancellationToken);
 }
 
 public sealed class UserService(IUserRepository repository)
 {
     private const int HashIterations = 100_000;
 
-    public async Task<IReadOnlyList<UserResponse>> GetUsersAsync(CancellationToken cancellationToken) =>
-        (await repository.GetUsersAsync(cancellationToken)).Select(ToResponse).ToArray();
+    public async Task<IReadOnlyList<UserResponse>> GetUsersAsync(CancellationToken cancellationToken, bool includeInactive = false) =>
+        (await repository.GetUsersAsync(includeInactive, cancellationToken)).Select(ToResponse).ToArray();
 
-    public async Task<UserResponse?> GetByIdAsync(long id, CancellationToken cancellationToken)
+    public async Task<UserResponse?> GetByIdAsync(long id, CancellationToken cancellationToken, bool includeInactive = false)
     {
-        var user = await repository.GetByIdAsync(id, cancellationToken);
+        var user = await repository.GetByIdAsync(id, includeInactive, cancellationToken);
         return user is null ? null : ToResponse(user);
     }
 
@@ -61,14 +62,15 @@ public sealed class UserService(IUserRepository repository)
             Cpf = cpf,
             CreatedAt = DateOnly.FromDateTime(DateTime.UtcNow),
             Status = status,
-            PasswordHash = HashPassword(request.Password)
+            PasswordHash = HashPassword(request.Password),
+            IsActive = true
         }, cancellationToken);
         return ToResponse(user);
     }
 
     public async Task<UserResponse> UpdateAsync(long id, UpdateUserRequest request, CancellationToken cancellationToken)
     {
-        var user = await repository.GetByIdAsync(id, cancellationToken)
+        var user = await repository.GetByIdAsync(id, true, cancellationToken)
             ?? throw new KeyNotFoundException("Usuário não encontrado.");
         var name = request.Name?.Trim() ?? "";
         var cpf = NormalizeCpf(request.Cpf);
@@ -88,29 +90,39 @@ public sealed class UserService(IUserRepository repository)
         user.Name = name;
         user.Cpf = cpf;
         user.Status = status;
+        if (request.IsActive.HasValue) user.IsActive = request.IsActive.Value;
         return ToResponse(await repository.UpdateAsync(user, cancellationToken));
     }
 
-    public async Task DeleteAsync(long id, long currentUserId, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(long id, long currentUserId, CancellationToken cancellationToken)
     {
         if (id == currentUserId)
             throw new InvalidOperationException("Não é possível excluir o usuário conectado.");
-        var user = await repository.GetByIdAsync(id, cancellationToken)
+        var user = await repository.GetByIdAsync(id, true, cancellationToken)
             ?? throw new KeyNotFoundException("Usuário não encontrado.");
         if (user.Status == "GERENTE" && await CountManagersAsync(cancellationToken) <= 1)
             throw new InvalidOperationException("O sistema precisa manter pelo menos um gerente.");
-        if (!await repository.DeleteAsync(id, cancellationToken))
+        var inactivated = await repository.DeleteAsync(id, cancellationToken);
+        if (!inactivated.HasValue)
             throw new KeyNotFoundException("Usuário não encontrado.");
+        return inactivated.Value;
     }
 
-    public async Task<UserResponse?> AuthenticateAsync(LoginRequest request, CancellationToken cancellationToken)
+    public async Task<UserResponse?> AuthenticateAsync(LoginRequest request, string? ip, string? userAgent, CancellationToken cancellationToken)
     {
         var cpf = NormalizeCpf(request.Cpf);
-        if (!IsValidCpf(cpf) || string.IsNullOrEmpty(request.Password))
+        var cpfHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cpf))).ToLowerInvariant();
+        var user = IsValidCpf(cpf) ? await repository.GetByCpfAsync(cpf, cancellationToken) : null;
+        var passwordValid = user is not null && VerifyPassword(request.Password ?? "", user.PasswordHash);
+        var authenticated = passwordValid && user!.IsActive;
+        var allowed = await repository.RecordLoginAttemptAsync(
+            user?.Id, cpfHash, authenticated, ip, userAgent, cancellationToken);
+        if (!allowed)
+            throw new InvalidOperationException("Muitas tentativas. Tente novamente em 15 minutos.");
+        if (!IsValidCpf(cpf) || user is null || !passwordValid)
             return null;
-        var user = await repository.GetByCpfAsync(cpf, cancellationToken);
-        if (user is null || !VerifyPassword(request.Password, user.PasswordHash))
-            return null;
+        if (!user.IsActive)
+            throw new InvalidOperationException("Usuário inativo");
         return ToResponse(user);
     }
 
@@ -120,10 +132,12 @@ public sealed class UserService(IUserRepository repository)
         if (string.IsNullOrEmpty(request.CurrentPassword))
             throw new ArgumentException("Informe a senha atual.");
 
-        var user = await repository.GetByIdAsync(id, cancellationToken)
+        var user = await repository.GetByIdAsync(id, false, cancellationToken)
             ?? throw new KeyNotFoundException("Usuário não encontrado.");
         if (!VerifyPassword(request.CurrentPassword, user.PasswordHash))
             throw new ArgumentException("A senha atual está incorreta.");
+        if (newPassword == request.CurrentPassword)
+            throw new ArgumentException("A nova senha deve ser diferente da senha atual.");
 
         user.PasswordHash = HashPassword(newPassword);
         await repository.UpdateAsync(user, cancellationToken);
@@ -166,7 +180,7 @@ public sealed class UserService(IUserRepository repository)
     }
 
     private async Task<int> CountManagersAsync(CancellationToken cancellationToken) =>
-        (await repository.GetUsersAsync(cancellationToken)).Count(user => user.Status == "GERENTE");
+        (await repository.GetUsersAsync(false, cancellationToken)).Count(user => user.Status == "GERENTE" && user.IsActive);
 
     private static string HashPassword(string password)
     {
@@ -221,5 +235,5 @@ public sealed class UserService(IUserRepository repository)
     }
 
     private static UserResponse ToResponse(User user) =>
-        new(user.Id, user.Name, user.Cpf, user.CreatedAt, user.Status);
+        new(user.Id, user.Name, user.Cpf, user.CreatedAt, user.Status, user.IsActive);
 }

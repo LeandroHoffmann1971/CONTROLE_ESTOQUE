@@ -25,7 +25,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
 
 ## Instalação e execução
 
-1. Crie o projeto Supabase e execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor. O script prepara as tabelas, índices, políticas e trigger; não insere usuários ou credenciais.
+1. Para uma instalação vazia, crie o projeto Supabase e execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor. Ele prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais. Para uma instalação existente, aplique em ordem os scripts incrementais em [`backend/supabase/migrations/`](backend/supabase/migrations/); não execute migrações antigas fora de ordem.
 2. Crie o arquivo local `.env` a partir do exemplo:
 
    ```powershell
@@ -77,8 +77,11 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 - Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas.
 - Entradas e saídas são registradas a partir dos cards de produtos.
 - As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
-- O token de acesso existe somente no estado em memória da aplicação; recarregar a página encerra a sessão.
-- O catálogo e as operações offline pendentes podem ser mantidos localmente para sincronização. Nenhuma senha ou token de autenticação é armazenado no `localStorage`.
+- O token de acesso existe somente na memória do processo da API; o armazenamento é local ao processo e não compartilhado entre instâncias. A interface também não persiste token e recarregar a página exige novo login.
+- O catálogo e operações pendentes são separados por usuário em `despensa-products:{userId}` e `despensa-pending:{userId}`. O sincronizador usa mutex local e `navigator.locks` quando disponível; IDs de operações persistidos permitem repetição idempotente para cadastro de produto e movimentação. Nenhuma senha ou token é gravado no `localStorage`.
+- Usuários e produtos são filtrados para ativos por padrão. Gerentes podem solicitar `includeInactive=true`; movimentações/saídas verificam o saldo na API e no trigger SQL.
+- Tentativas de login são registradas em `login_audit`; o limite atômico é de cinco falhas por combinação CPF (hash) + IP a cada 15 minutos. O IP e user-agent são enviados somente à API.
+- Em desenvolvimento, o Vite encaminha `/api` para `http://localhost:5080`; em produção, a API serve os assets React.
 - A interface foi projetada para 375, 768 e 1280 px, sem rolagem horizontal.
 
 ## Build e Docker
@@ -88,6 +91,16 @@ Valide o backend com:
 ```powershell
 dotnet build .\Estoque.slnx
 ```
+
+Testes unitários disponíveis:
+
+```powershell
+Push-Location .\frontend
+npm test
+Pop-Location
+```
+
+Ainda não há suíte Playwright nem testes xUnit/WebApplicationFactory neste repositório. Os builds e os testes unitários de validadores/submissão não substituem teste de integração com PostgreSQL/Supabase.
 
 Gere os arquivos estáticos do frontend antes de construir a imagem:
 
@@ -105,4 +118,51 @@ Configure as variáveis de ambiente do Supabase no serviço ou container. A imag
 
 O arquivo `.env` contém configurações locais e é ignorado pelo Git. O schema SQL não inclui nomes, CPFs, senhas nem contas iniciais; o gerente inicial é cadastrado explicitamente pelo script de bootstrap, usando variáveis locais. A chave de serviço do Supabase ignora RLS e deve permanecer exclusivamente no servidor.
 
-Os tokens de autenticação e os perfis são validados pela API. A autenticação local não inclui limitação de tentativas nem fluxo de recuperação de senha; para implantação pública, use HTTPS e adicione controles operacionais apropriados.
+Os tokens de autenticação e os perfis são validados pela API. Os tokens permanecem em memória, então uma reinicialização da API encerra as sessões; para múltiplas instâncias, configure armazenamento compartilhado de sessões antes da implantação. Use HTTPS em implantação pública.
+
+## Respostas da Revisão Final
+
+### Estados de UI observados no código
+
+| Tela | Demora de 10 s | Falha de leitura/gravação | Array vazio |
+|---|---|---|---|
+| Login | Aviso global de demora; timeout em 15 s | Mensagem retornada pela API; 401 diferencia credenciais/usuário inativo | Não aplicável |
+| Estoque | Aviso global; lista continua em carregamento | Erro da lista com retry; erro de gravação no formulário/toast | Exibe estado de catálogo vazio |
+| Novo/editar produto | Aviso global | Erro de validação/API; retry da submissão | Não aplicável |
+| Movimentações | Aviso global | Erro da lista com retry | Exibe histórico vazio |
+| Usuários | Aviso global | Erro da lista com retry | Exibe cadastro vazio |
+| Alterar senha | Aviso global; usuário carregado por `/api/me` | Erro de carregamento ou gravação | Não aplicável |
+| Editar usuário | GET por ID independente ao abrir; aviso global | Erro no modal com retry | Não aplicável |
+| Registrar entrada/saída | GET por ID independente ao abrir; aviso global | Erro no modal/form; saída acima do saldo é barrada | Não aplicável |
+
+O aviso após 10 s e o timeout de 15 s estão no cliente comum de API; não há teste de atraso/timeout automatizado ainda. As telas não foram validadas com API mockada em estados completos.
+
+### Validação por camada
+
+| Regra | Frontend | Servidor | PostgreSQL |
+|---|---|---|---|
+| CPF | `isValidCpf` e feedback de formulário | Dígitos verificadores no cadastro/login | `is_valid_cpf` e CHECK do formato |
+| Senha | Exatamente 6 caracteres ASCII alfanuméricos | Validação de contrato e PBKDF2 | Hash armazenado; não valida a senha em texto |
+| Nome | Trim e limites por tela | Valida limites e persiste o nome trimado | CHECK/tipo varchar |
+| Quantidade e saldo | Decimal até 3 casas; saída limitada ao saldo exibido | Faixa `numeric(12,3)` e valida saldo lido | CHECK e trigger atômico bloqueiam saldo negativo |
+| Usuário/produto ativo | Filtro padrão e filtro de inativos para gerente | Consultas por padrão filtram ativos; permissões por cargo | `is_active NOT NULL DEFAULT true`; trigger bloqueia movimento em produto inativo |
+
+A redundância é intencional: o frontend melhora feedback, a API protege contra clientes não confiáveis e o banco é a autoridade final sob concorrência.
+
+### Revisão crítica e verificação
+
+- `useSubmission` impede execução concorrente no mesmo hook, preserva loading em `clear()` e oferece retry; há testes unitários para submissão dupla, retry e limpeza durante loading.
+- O timeout e os eventos globais de aviso/401 são centralizados em `api.js`. A expiração é aplicada aos requests autenticados; sessões ainda são mantidas somente na memória do servidor.
+- O cache/fila offline têm chaves por usuário, UUID para criação de produto/movimentação, verificação do proprietário local e trava por `navigator.locks` com fallback para mutex em memória. O banco tem índices únicos parciais e o repositório recupera o registro existente quando a resposta de uma operação idempotente foi perdida. Teste de duas abas/resposta perdida ainda não foi executado.
+- O trigger de movimento atualiza saldo e `balance_after` na mesma transação e rejeita produto inativo ou saldo insuficiente. O CHECK impede saldos negativos.
+- A proteção ao último gerente ativo usa advisory transaction lock e trigger `SECURITY DEFINER`; ainda não foi exercitada por teste concorrente contra PostgreSQL.
+- `schema.sql` não contém comandos de truncamento ou remoção de coluna. A migração `001_preserve_product_code.sql` preserva os registros e valores de código existentes; a `002_active_audit_and_stock_integrity.sql` adiciona ativos, auditoria, idempotência e integridade de saldo.
+- Verificado nesta revisão: `npm run build`, `npm test` e `dotnet build .\Estoque.slnx`. Não verificados: `dotnet test`, integração real com Supabase/PostgreSQL, Playwright nos viewports 375×812/768×1024/1280×800, ausência de rolagem horizontal e capturas mobile/tablet/desktop atualizadas.
+
+### Itens ainda não atendidos
+
+- `App.jsx` continua concentrando páginas e diálogos; somente `useSubmission` e os validadores foram extraídos. `useResource` e `useOfflineQueue` independentes ainda não existem.
+- Button/Input/Card/Badge genéricos foram criados e usados em partes da interface, mas os elementos nativos restantes não foram todos substituídos.
+- Ainda faltam testes de estado de cada tela com API mockada, teste de concorrência/resposta perdida da fila, xUnit com `WebApplicationFactory`/PostgreSQL e E2E Playwright. Portanto CRUD e controles de concorrência no banco ainda não estão comprovados por testes automatizados.
+- Os prints versionados existentes não cobrem todas as telas/estados nem os três viewports exigidos; não foram gerados novos arquivos em `docs/prints/`.
+- As migrações SQL foram revisadas estaticamente, mas não executadas: este ambiente não tem `psql` nem credenciais de banco de teste configuradas.

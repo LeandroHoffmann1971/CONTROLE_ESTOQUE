@@ -24,4 +24,16 @@ public sealed class StockMovement
 
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("balance_after")]
+    public decimal BalanceAfter { get; set; }
+
+    [JsonPropertyName("is_active")]
+    public bool IsActive { get; set; } = true;
+
+    [JsonPropertyName("client_operation_id")]
+    public Guid? ClientOperationId { get; set; }
+
+    [JsonPropertyName("created_by")]
+    public long? CreatedBy { get; set; }
 }

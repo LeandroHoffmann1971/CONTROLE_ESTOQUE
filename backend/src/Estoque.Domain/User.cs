@@ -8,4 +8,5 @@ public sealed class User
     public DateOnly CreatedAt { get; set; }
     public string Status { get; set; } = "";
     public string PasswordHash { get; set; } = "";
+    public bool IsActive { get; set; } = true;
 }

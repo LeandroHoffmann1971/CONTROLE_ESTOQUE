@@ -62,12 +62,11 @@ app.Use(async (context, next) =>
 
 	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
 		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
-	var isProductRead = HttpMethods.IsGet(context.Request.Method) && path == "/api/products";
-	var isProductUpdate = HttpMethods.IsPut(context.Request.Method) &&
-		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$");
+	var isProductRead = HttpMethods.IsGet(context.Request.Method) &&
+		(path == "/api/products" || System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$"));
 	var isPasswordChange = HttpMethods.IsPut(context.Request.Method) && path == "/api/auth/password";
 	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
-	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isProductUpdate && !isPasswordChange && !isLogout)
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isPasswordChange && !isLogout)
 	{
 		context.Response.StatusCode = StatusCodes.Status403Forbidden;
 		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta operação está disponível apenas para gerentes." });
@@ -109,11 +108,34 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
-app.MapPost("/api/auth/login", async (LoginRequest request, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+app.MapGet("/api/me", async (HttpContext context, UserService service, CancellationToken token) =>
 {
-	var user = await service.AuthenticateAsync(request, token);
-	if (user is null)
+	if (context.Items["authenticated-user"] is not UserResponse sessionUser)
 		return Results.Unauthorized();
+	var currentUser = await service.GetByIdAsync(sessionUser.Id, token);
+	return currentUser is null ? Results.Unauthorized() : Results.Ok(currentUser);
+});
+app.MapPost("/api/auth/login", async (LoginRequest request, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
+{
+	UserResponse? user;
+	try
+	{
+		user = await service.AuthenticateAsync(
+			request,
+			context.Connection.RemoteIpAddress?.ToString(),
+			context.Request.Headers.UserAgent.ToString(),
+			token);
+	}
+	catch (InvalidOperationException exception) when (exception.Message == "Usuário inativo")
+	{
+		return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status401Unauthorized);
+	}
+	catch (InvalidOperationException exception) when (exception.Message.StartsWith("Muitas tentativas", StringComparison.Ordinal))
+	{
+		return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status429TooManyRequests);
+	}
+	if (user is null)
+		return Results.Json(new { error = "Credenciais inválidas." }, statusCode: StatusCodes.Status401Unauthorized);
 	var accessToken = tokens.Create(user);
 	return Results.Ok(new LoginResponse(accessToken.Token, accessToken.ExpiresAt, user));
 })
@@ -144,13 +166,18 @@ app.MapPut("/api/auth/password", async (ChangePasswordRequest request, HttpConte
 	.Produces(StatusCodes.Status400BadRequest)
 	.Produces(StatusCodes.Status401Unauthorized)
 	.Produces(StatusCodes.Status404NotFound);
-app.MapGet("/api/users", async (UserService service, CancellationToken token) => Results.Ok(await service.GetUsersAsync(token)))
+app.MapGet("/api/users", async (HttpContext context, UserService service, CancellationToken token, bool includeInactive = false) =>
+{
+	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+		return Results.Forbid();
+	return Results.Ok(await service.GetUsersAsync(token, includeInactive));
+})
 	.WithName("GetUsers")
 	.WithSummary("Lista os usuários cadastrados")
 	.WithDescription("Disponível somente para gerentes.");
-app.MapGet("/api/users/{id:long}", async (long id, UserService service, CancellationToken token) =>
+app.MapGet("/api/users/{id:long}", async (long id, UserService service, CancellationToken token, bool includeInactive = false) =>
 {
-	var user = await service.GetByIdAsync(id, token);
+	var user = await service.GetByIdAsync(id, token, includeInactive);
 	return user is null ? Results.NotFound() : Results.Ok(user);
 })
 	.WithName("GetUserById")
@@ -193,9 +220,9 @@ app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserS
 		return Results.Unauthorized();
 	try
 	{
-		await service.DeleteAsync(id, currentUser.Id, token);
+		var inactivated = await service.DeleteAsync(id, currentUser.Id, token);
 		tokens.RevokeUser(id);
-		return Results.NoContent();
+		return Results.Ok(new { inactivated, message = inactivated ? "Usuário inativado por possuir movimentações." : "Usuário excluído." });
 	}
 	catch (InvalidOperationException exception)
 	{
@@ -205,22 +232,45 @@ app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserS
 	.WithName("DeleteUser")
 	.WithSummary("Exclui um usuário")
 	.WithDescription("Disponível somente para gerentes. Não permite excluir a própria conta ou o último gerente.");
-app.MapGet("/api/products", async (StockService service, CancellationToken token) => Results.Ok(await service.GetProductsAsync(token)));
-app.MapPost("/api/products", async (CreateProductRequest request, StockService service, CancellationToken token) =>
-	Results.Created("/api/products", await service.CreateProductAsync(request, token)));
+app.MapGet("/api/products", async (HttpContext context, StockService service, CancellationToken token, bool includeInactive = false) =>
+{
+	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+		return Results.Forbid();
+	return Results.Ok(await service.GetProductsAsync(token, includeInactive));
+});
+app.MapGet("/api/products/{id:guid}", async (Guid id, HttpContext context, StockService service, CancellationToken token, bool includeInactive = false) =>
+{
+	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+		return Results.Forbid();
+	var product = await service.GetProductAsync(id, token, includeInactive);
+	return product is null ? Results.NotFound() : Results.Ok(product);
+});
+app.MapPost("/api/products", async (CreateProductRequest request, HttpContext context, StockService service, CancellationToken token) =>
+{
+	if (request.ClientOperationId.HasValue &&
+		(!context.Items.TryGetValue("authenticated-user", out var value) ||
+		 value is not UserResponse currentUser || request.CreatedBy != currentUser.Id))
+		return Results.Forbid();
+	var createRequest = request.ClientOperationId.HasValue
+		? request
+		: request with { CreatedBy = context.Items.TryGetValue("authenticated-user", out var userValue) && userValue is UserResponse user ? user.Id : null };
+	return Results.Created("/api/products", await service.CreateProductAsync(createRequest, token));
+});
 app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest request, StockService service, CancellationToken token) =>
 	Results.Ok(await service.UpdateProductAsync(id, request, token)));
 app.MapDelete("/api/products/{id:guid}", async (Guid id, StockService service, CancellationToken token) =>
 {
-	await service.DeleteProductAsync(id, token);
-	return Results.NoContent();
+	var inactivated = await service.DeleteProductAsync(id, token);
+	return Results.Ok(new { inactivated, message = inactivated ? "Produto inativado por possuir histórico de movimentações." : "Produto excluído." });
 });
 app.MapGet("/api/movements", async (Guid? productId, StockService service, CancellationToken token) => Results.Ok(await service.GetMovementsAsync(productId, token)));
 app.MapPost("/api/products/{id:guid}/movements", async (Guid id, CreateMovementRequest request, HttpContext context, StockService service, CancellationToken token) =>
 {
 	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
 		return Results.Unauthorized();
-	var authenticatedRequest = request with { OperatorName = currentUser.Name };
+	if (request.ClientOperationId.HasValue && request.CreatedBy != currentUser.Id)
+		return Results.Forbid();
+	var authenticatedRequest = request with { OperatorName = currentUser.Name, CreatedBy = currentUser.Id };
 	return Results.Created("/api/movements", await service.CreateMovementAsync(id, authenticatedRequest, token));
 });
 

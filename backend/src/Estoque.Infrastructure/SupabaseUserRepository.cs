@@ -25,17 +25,32 @@ public sealed class SupabaseUserRepository : IUserRepository
             this.http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ServiceRoleKey);
     }
 
-    public async Task<IReadOnlyList<Estoque.Domain.User>> GetUsersAsync(CancellationToken cancellationToken) =>
-        (await GetListAsync("users?select=id,name,cpf,created_at,status&order=id.asc", cancellationToken))
+    public async Task<IReadOnlyList<Estoque.Domain.User>> GetUsersAsync(bool includeInactive, CancellationToken cancellationToken) =>
+        (await GetListAsync<SupabaseUser>($"users?select=id,name,cpf,created_at,status,is_active&{(includeInactive ? "" : "is_active=eq.true&")}order=id.asc", cancellationToken))
             .Select(Map).ToArray();
 
-    public async Task<Estoque.Domain.User?> GetByIdAsync(long id, CancellationToken cancellationToken) =>
-        (await GetListAsync($"users?id=eq.{id}&select=*", cancellationToken))
+    public async Task<Estoque.Domain.User?> GetByIdAsync(long id, bool includeInactive, CancellationToken cancellationToken) =>
+        (await GetListAsync<SupabaseUser>($"users?id=eq.{id}&select=*&{(includeInactive ? "" : "is_active=eq.true&")}", cancellationToken))
             .Select(Map).FirstOrDefault();
 
     public async Task<User?> GetByCpfAsync(string cpf, CancellationToken cancellationToken) =>
-        (await GetListAsync($"users?cpf=eq.{Uri.EscapeDataString(cpf)}&select=*", cancellationToken))
+        (await GetListAsync<SupabaseUser>($"users?cpf=eq.{Uri.EscapeDataString(cpf)}&select=*", cancellationToken))
             .Select(Map).FirstOrDefault();
+
+    public async Task<bool> RecordLoginAttemptAsync(
+        long? userId, string cpfHash, bool success, string? ip, string? userAgent, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync("rpc/record_login_attempt", new
+        {
+            p_user_id = userId,
+            p_cpf_hash = cpfHash,
+            p_success = success,
+            p_ip = ip,
+            p_user_agent = userAgent
+        }, JsonOptions, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<bool>(JsonOptions, cancellationToken);
+    }
 
     public async Task<Estoque.Domain.User> CreateAsync(Estoque.Domain.User user, CancellationToken cancellationToken)
     {
@@ -46,7 +61,8 @@ public sealed class SupabaseUserRepository : IUserRepository
                 name = user.Name,
                 cpf = user.Cpf,
                 status = user.Status,
-                password_hash = user.PasswordHash
+                password_hash = user.PasswordHash,
+                is_active = user.IsActive
             }, cancellationToken)).Single());
         }
         catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Conflict)
@@ -64,7 +80,8 @@ public sealed class SupabaseUserRepository : IUserRepository
                 name = user.Name,
                 cpf = user.Cpf,
                 status = user.Status,
-                password_hash = user.PasswordHash
+                password_hash = user.PasswordHash,
+                is_active = user.IsActive
             }, cancellationToken);
             return updated.Count == 0
                 ? throw new KeyNotFoundException("Usuário não encontrado.")
@@ -76,21 +93,32 @@ public sealed class SupabaseUserRepository : IUserRepository
         }
     }
 
-    public async Task<bool> DeleteAsync(long id, CancellationToken cancellationToken)
+    public async Task<bool?> DeleteAsync(long id, CancellationToken cancellationToken)
     {
+        var history = await GetListAsync<Guid>($"stock_movements?created_by=eq.{id}&select=id&limit=1", cancellationToken);
+        if (history.Count > 0)
+        {
+            using var update = new HttpRequestMessage(HttpMethod.Patch, $"users?id=eq.{id}")
+            {
+                Content = new StringContent("{\"is_active\":false}", Encoding.UTF8, "application/json")
+            };
+            using var updateResponse = await http.SendAsync(update, cancellationToken);
+            await EnsureSuccessAsync(updateResponse, cancellationToken);
+            return true;
+        }
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"users?id=eq.{id}&select=id");
         request.Headers.Add("Prefer", "return=representation");
         using var response = await http.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         var deleted = await response.Content.ReadFromJsonAsync<List<SupabaseUser>>(JsonOptions, cancellationToken) ?? [];
-        return deleted.Count > 0;
+        return deleted.Count == 0 ? null : false;
     }
 
-    private async Task<IReadOnlyList<SupabaseUser>> GetListAsync(string path, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<T>> GetListAsync<T>(string path, CancellationToken cancellationToken)
     {
         using var response = await http.GetAsync(path, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<List<SupabaseUser>>(JsonOptions, cancellationToken) ?? [];
+        return await response.Content.ReadFromJsonAsync<List<T>>(JsonOptions, cancellationToken) ?? [];
     }
 
     private async Task<IReadOnlyList<SupabaseUser>> SendListAsync(HttpMethod method, string path, object payload, CancellationToken cancellationToken)
@@ -112,7 +140,8 @@ public sealed class SupabaseUserRepository : IUserRepository
         Cpf = user.Cpf,
         CreatedAt = user.CreatedAt,
         Status = user.Status,
-        PasswordHash = user.PasswordHash
+        PasswordHash = user.PasswordHash,
+        IsActive = user.IsActive
     };
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -135,6 +164,8 @@ public sealed class SupabaseUserRepository : IUserRepository
         public DateOnly CreatedAt { get; set; }
         [JsonPropertyName("status")]
         public string Status { get; set; } = "";
+        [JsonPropertyName("is_active")]
+        public bool IsActive { get; set; } = true;
         [JsonPropertyName("password_hash")]
         public string PasswordHash { get; set; } = "";
 
