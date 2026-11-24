@@ -6,13 +6,13 @@ using Microsoft.Extensions.FileProviders;
 var builder = WebApplication.CreateBuilder(args);
 var supabase = new SupabaseOptions
 {
-	Url = builder.Configuration["Supabase:Url"]
-		?? builder.Configuration["SUPABASE_URL"]
+	Url = builder.Configuration["SUPABASE_URL"]
+		?? builder.Configuration["Supabase:Url"]
 		?? "https://oaukruzqhijxgvjlyyqk.supabase.co",
-	ServiceRoleKey = builder.Configuration["Supabase:SecretKey"]
-		?? builder.Configuration["SUPABASE_SECRET_KEY"]
-		?? builder.Configuration["Supabase:ServiceRoleKey"]
+	ServiceRoleKey = builder.Configuration["SUPABASE_SECRET_KEY"]
 		?? builder.Configuration["SUPABASE_SERVICE_ROLE_KEY"]
+		?? builder.Configuration["Supabase:SecretKey"]
+		?? builder.Configuration["Supabase:ServiceRoleKey"]
 		?? ""
 };
 
@@ -101,8 +101,14 @@ app.Use(async (context, next) =>
 			? StatusCodes.Status409Conflict
 			: StatusCodes.Status502BadGateway;
 		var detail = status == StatusCodes.Status409Conflict
-			? "Produto já cadastrado"
-			: "Não foi possível acessar o banco de dados.";
+			? "Registro duplicado. Confira se o CPF ou nome já está cadastrado."
+			: exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+				? "O Supabase recusou a chave do servidor. Confira SUPABASE_SECRET_KEY."
+				: exception.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.NotFound
+					? "O schema do Supabase está desatualizado. Execute as migrações 001 e 002 na ordem indicada no README."
+					: exception.StatusCode is null
+						? "Não foi possível conectar ao Supabase. Confira a URL, a conexão de rede e a disponibilidade do projeto."
+						: "O Supabase não conseguiu concluir a solicitação. Confira os logs da API.";
 		await Results.Problem(detail, statusCode: status).ExecuteAsync(context);
 	}
 });

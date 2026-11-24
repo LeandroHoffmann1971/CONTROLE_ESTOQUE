@@ -169,7 +169,8 @@ public sealed class SupabaseStockRepository : IStockRepository
         if (response.IsSuccessStatusCode) return;
         var details = await response.Content.ReadAsStringAsync(token);
         var message = $"Supabase respondeu {(int)response.StatusCode}: {details}";
-        if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("Tabelas do Supabase não encontradas. Execute backend/supabase/schema.sql.");
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new InvalidOperationException("Recurso Supabase não encontrado. Em instalação existente, execute as migrações 001 e 002; em instalação nova, execute schema.sql.");
         throw new HttpRequestException(message, null, response.StatusCode);
     }
 

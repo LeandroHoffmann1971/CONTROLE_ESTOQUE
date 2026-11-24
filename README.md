@@ -32,7 +32,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
    Copy-Item .env.example .env
    ```
 
-   Preencha `SUPABASE_URL` e `SUPABASE_SECRET_KEY` no `.env`. A chave secreta é usada somente no servidor e não deve ser compartilhada ou versionada. Também é aceita a variável legada `SUPABASE_SERVICE_ROLE_KEY`. As variáveis `TEST_USER_*` são opcionais e usadas apenas pelos exemplos em `users.http`; utilize dados fictícios.
+   Preencha `SUPABASE_URL` e `SUPABASE_SECRET_KEY` no `.env`, ou configure essas variáveis no ambiente do processo. O script de inicialização aceita as duas formas e valida valores de exemplo/URL inválidos antes de iniciar. A chave secreta é usada somente no servidor e não deve ser compartilhada ou versionada. Também é aceita a variável legada `SUPABASE_SERVICE_ROLE_KEY`. As variáveis `TEST_USER_*` são opcionais e usadas apenas pelos exemplos em `users.http`; utilize dados fictícios.
 3. Configure `INITIAL_MANAGER_NAME`, `INITIAL_MANAGER_CPF` e `INITIAL_MANAGER_PASSWORD` no `.env`, com os dados do gerente que você escolheu. O CPF deve ser válido e a senha deve conter 6 caracteres alfanuméricos. Cadastre o primeiro gerente uma única vez:
 
    ```powershell
@@ -71,6 +71,13 @@ Pop-Location
 ```
 
 Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para `http://localhost:5080`. Após alterações na interface, execute `npm run build` para atualizar os arquivos usados em produção.
+
+## Diagnóstico de acesso ao banco
+
+- `401/403` do Supabase: confira a chave secreta do projeto e não use `anon`/`publishable` no backend.
+- `400/404`: em banco existente, execute as migrações `001` e `002` no projeto indicado por `SUPABASE_URL`; `schema.sql` é para instalação limpa.
+- Falha de conexão sem status HTTP: confirme a URL HTTPS do projeto, a rede e se o projeto Supabase está ativo.
+- A mensagem detalhada do Supabase fica nos logs do servidor; a resposta da API orienta a categoria do problema sem expor a chave.
 
 ## Recursos e comportamento
 
