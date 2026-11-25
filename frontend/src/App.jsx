@@ -6,14 +6,13 @@ import Card from "./components/ui/Card.jsx";
 import Input from "./components/ui/Input.jsx";
 import useSubmission from "./hooks/useSubmission.js";
 import {
-  isMovementDateRangeWithinSupportedYears,
+  getMovementDateRangeErrors,
   MOVEMENT_DATE_MAX,
   MOVEMENT_DATE_MIN
 } from "./utils/movementDateRange.js";
 import { isValidCpf, isValidNumeric12_3, isValidPassword, trimmedLength } from "./utils/validators.js";
 
 const PASSWORD_ERROR = "A senha deve ter 6 caracteres alfanuméricos";
-const MOVEMENT_DATE_RANGE_ERROR = "A data deve estar entre 01/01/2000 e 31/12/2100";
 const EMPTY_PRODUCTS = { status: "loading", data: [], error: null };
 const EMPTY_MOVEMENTS = { status: "idle", data: [], error: null };
 const EMPTY_USERS = { status: "idle", data: [], error: null };
@@ -496,31 +495,32 @@ function ProductCard({ product, manager, onMovement, onEdit, onDelete, deleting 
 
 function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }) {
   const [dateRange, setDateRange] = useState({ startDate: "", endDate: "" });
-  const [filterError, setFilterError] = useState("");
+  const [touchedDateFields, setTouchedDateFields] = useState({});
+  const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const requiredDateFields = hasSubmittedSearch
+    ? ["startDate", "endDate"]
+    : Object.keys(touchedDateFields).filter(field => touchedDateFields[field]);
+  const dateErrors = getMovementDateRangeErrors(dateRange, requiredDateFields);
   const updateDateRange = (field, value) => {
     const updatedDateRange = { ...dateRange, [field]: value };
     setDateRange(updatedDateRange);
-    setFilterError(
-      isMovementDateRangeWithinSupportedYears(updatedDateRange) ? "" : MOVEMENT_DATE_RANGE_ERROR
-    );
+  };
+  const touchDateField = field => {
+    setTouchedDateFields(current => ({ ...current, [field]: true }));
   };
   const search = event => {
     event.preventDefault();
-    if (!isMovementDateRangeWithinSupportedYears(dateRange)) {
-      setFilterError(MOVEMENT_DATE_RANGE_ERROR);
-      return;
-    }
-    if (dateRange.startDate && dateRange.endDate && dateRange.startDate > dateRange.endDate) {
-      setFilterError("A Data de Início deve ser menor ou igual à Data de Término.");
-      return;
-    }
-    setFilterError("");
+    const errors = getMovementDateRangeErrors(dateRange, ["startDate", "endDate"]);
+    setHasSubmittedSearch(true);
+    setTouchedDateFields({ startDate: true, endDate: true });
+    if (Object.keys(errors).length) return;
     onSearch(dateRange);
   };
   const clearSearch = () => {
     setDateRange({ startDate: "", endDate: "" });
-    setFilterError("");
+    setTouchedDateFields({});
+    setHasSubmittedSearch(false);
     onSearch({ startDate: "", endDate: "" });
   };
   const deleteMovement = async movement => {
@@ -538,32 +538,45 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
     <>
       <PageHeading description="Registros ordenados do mais recente para o mais antigo." eyebrow="CONSULTA" title="Movimentações" />
       <section className="border-t border-[#dfe2d7] pt-5">
-        <form className="mb-5 rounded-xl border border-[#e5e7df] bg-white p-4" onSubmit={search}>
+        <form className="mb-5 rounded-xl border border-[#e5e7df] bg-white p-4" noValidate onSubmit={search}>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
-            <Field label="Data de Início">
+            <div className="min-w-0 text-sm font-semibold text-[#454b3f]">
+              <label className="block" htmlFor="movement-start-date">Data de Início</label>
               <input
-                className={inputClass}
+                className={`${inputClass} mt-1.5`}
                 max={dateRange.endDate && dateRange.endDate < MOVEMENT_DATE_MAX ? dateRange.endDate : MOVEMENT_DATE_MAX}
+                aria-describedby={touchedDateFields.startDate || hasSubmittedSearch ? (dateErrors.startDate ? "movement-start-date-error" : undefined) : undefined}
+                aria-invalid={Boolean((touchedDateFields.startDate || hasSubmittedSearch) && dateErrors.startDate)}
+                id="movement-start-date"
                 min={MOVEMENT_DATE_MIN}
                 onChange={event => updateDateRange("startDate", event.target.value)}
+                onBlur={() => touchDateField("startDate")}
+                required
                 type="date"
                 value={dateRange.startDate}
               />
-            </Field>
-            <Field label="Data de Término">
+              {(touchedDateFields.startDate || hasSubmittedSearch) && dateErrors.startDate && <p className="mt-1 text-sm font-normal text-red-700" id="movement-start-date-error" role="alert">{dateErrors.startDate}</p>}
+            </div>
+            <div className="min-w-0 text-sm font-semibold text-[#454b3f]">
+              <label className="block" htmlFor="movement-end-date">Data de Término</label>
               <input
-                className={inputClass}
+                className={`${inputClass} mt-1.5`}
                 max={MOVEMENT_DATE_MAX}
+                aria-describedby={touchedDateFields.endDate || hasSubmittedSearch ? (dateErrors.endDate ? "movement-end-date-error" : undefined) : undefined}
+                aria-invalid={Boolean((touchedDateFields.endDate || hasSubmittedSearch) && dateErrors.endDate)}
+                id="movement-end-date"
                 min={dateRange.startDate && dateRange.startDate > MOVEMENT_DATE_MIN ? dateRange.startDate : MOVEMENT_DATE_MIN}
                 onChange={event => updateDateRange("endDate", event.target.value)}
+                onBlur={() => touchDateField("endDate")}
+                required
                 type="date"
                 value={dateRange.endDate}
               />
-            </Field>
+              {(touchedDateFields.endDate || hasSubmittedSearch) && dateErrors.endDate && <p className="mt-1 text-sm font-normal text-red-700" id="movement-end-date-error" role="alert">{dateErrors.endDate}</p>}
+            </div>
             <Button className="w-full lg:w-auto" type="submit">Pesquisar</Button>
             <Button className="w-full lg:w-auto" onClick={clearSearch} type="button" variant="secondary">Limpar</Button>
           </div>
-          {filterError && <p className="mt-2 text-sm text-red-700" role="alert">{filterError}</p>}
         </form>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
