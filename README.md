@@ -82,7 +82,7 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 ## Recursos e comportamento
 
 - Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação.
-- A tela Movimentações filtra datas inclusivas no fuso local do navegador por Data de Início e Data de Término e impede intervalo invertido tanto no formulário quanto na API.
+- A tela Movimentações filtra datas inclusivas no fuso local do navegador por Data de Início e Data de Término, limita ambos os campos ao período de 01/01/2000 a 31/12/2100 e impede intervalo invertido tanto no formulário quanto na API.
 - Entradas e saídas são registradas a partir dos cards de produtos.
 - As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
 - O token de acesso existe somente na memória do processo da API; o armazenamento é local ao processo e não compartilhado entre instâncias. A interface também não persiste token e recarregar a página exige novo login.

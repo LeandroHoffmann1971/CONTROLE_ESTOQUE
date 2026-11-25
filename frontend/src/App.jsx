@@ -5,6 +5,11 @@ import Button from "./components/ui/Button.jsx";
 import Card from "./components/ui/Card.jsx";
 import Input from "./components/ui/Input.jsx";
 import useSubmission from "./hooks/useSubmission.js";
+import {
+  isMovementDateRangeWithinSupportedYears,
+  MOVEMENT_DATE_MAX,
+  MOVEMENT_DATE_MIN
+} from "./utils/movementDateRange.js";
 import { isValidCpf, isValidNumeric12_3, isValidPassword, trimmedLength } from "./utils/validators.js";
 
 const PASSWORD_ERROR = "A senha deve ter 6 caracteres alfanuméricos";
@@ -494,6 +499,10 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
   const [deletingId, setDeletingId] = useState(null);
   const search = event => {
     event.preventDefault();
+    if (!isMovementDateRangeWithinSupportedYears(dateRange)) {
+      setFilterError("As datas devem estar entre 01/01/2000 e 31/12/2100.");
+      return;
+    }
     if (dateRange.startDate && dateRange.endDate && dateRange.startDate > dateRange.endDate) {
       setFilterError("A Data de Início deve ser menor ou igual à Data de Término.");
       return;
@@ -526,7 +535,8 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
             <Field label="Data de Início">
               <input
                 className={inputClass}
-                max={dateRange.endDate || undefined}
+                max={dateRange.endDate && dateRange.endDate < MOVEMENT_DATE_MAX ? dateRange.endDate : MOVEMENT_DATE_MAX}
+                min={MOVEMENT_DATE_MIN}
                 onChange={event => {
                   setDateRange(current => ({ ...current, startDate: event.target.value }));
                   setFilterError("");
@@ -538,7 +548,8 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
             <Field label="Data de Término">
               <input
                 className={inputClass}
-                min={dateRange.startDate || undefined}
+                max={MOVEMENT_DATE_MAX}
+                min={dateRange.startDate && dateRange.startDate > MOVEMENT_DATE_MIN ? dateRange.startDate : MOVEMENT_DATE_MIN}
                 onChange={event => {
                   setDateRange(current => ({ ...current, endDate: event.target.value }));
                   setFilterError("");
