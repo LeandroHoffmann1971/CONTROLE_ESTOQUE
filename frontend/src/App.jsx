@@ -13,6 +13,7 @@ import {
 import { isValidCpf, isValidNumeric12_3, isValidPassword, trimmedLength } from "./utils/validators.js";
 
 const PASSWORD_ERROR = "A senha deve ter 6 caracteres alfanuméricos";
+const MOVEMENT_DATE_RANGE_ERROR = "A data deve estar entre 01/01/2000 e 31/12/2100";
 const EMPTY_PRODUCTS = { status: "loading", data: [], error: null };
 const EMPTY_MOVEMENTS = { status: "idle", data: [], error: null };
 const EMPTY_USERS = { status: "idle", data: [], error: null };
@@ -497,10 +498,17 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
   const [dateRange, setDateRange] = useState({ startDate: "", endDate: "" });
   const [filterError, setFilterError] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const updateDateRange = (field, value) => {
+    const updatedDateRange = { ...dateRange, [field]: value };
+    setDateRange(updatedDateRange);
+    setFilterError(
+      isMovementDateRangeWithinSupportedYears(updatedDateRange) ? "" : MOVEMENT_DATE_RANGE_ERROR
+    );
+  };
   const search = event => {
     event.preventDefault();
     if (!isMovementDateRangeWithinSupportedYears(dateRange)) {
-      setFilterError("As datas devem estar entre 01/01/2000 e 31/12/2100.");
+      setFilterError(MOVEMENT_DATE_RANGE_ERROR);
       return;
     }
     if (dateRange.startDate && dateRange.endDate && dateRange.startDate > dateRange.endDate) {
@@ -537,10 +545,7 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
                 className={inputClass}
                 max={dateRange.endDate && dateRange.endDate < MOVEMENT_DATE_MAX ? dateRange.endDate : MOVEMENT_DATE_MAX}
                 min={MOVEMENT_DATE_MIN}
-                onChange={event => {
-                  setDateRange(current => ({ ...current, startDate: event.target.value }));
-                  setFilterError("");
-                }}
+                onChange={event => updateDateRange("startDate", event.target.value)}
                 type="date"
                 value={dateRange.startDate}
               />
@@ -550,10 +555,7 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
                 className={inputClass}
                 max={MOVEMENT_DATE_MAX}
                 min={dateRange.startDate && dateRange.startDate > MOVEMENT_DATE_MIN ? dateRange.startDate : MOVEMENT_DATE_MIN}
-                onChange={event => {
-                  setDateRange(current => ({ ...current, endDate: event.target.value }));
-                  setFilterError("");
-                }}
+                onChange={event => updateDateRange("endDate", event.target.value)}
                 type="date"
                 value={dateRange.endDate}
               />
