@@ -45,4 +45,18 @@ describe("useSubmission", () => {
     expect(action).toHaveBeenCalledTimes(2);
     expect(result.current.status).toBe("success");
   });
+
+  it("does not run success cleanup after a failed network submission", async () => {
+    const clearForm = vi.fn();
+    const action = vi.fn().mockRejectedValue(new Error("Não foi possível conectar."));
+    const { result } = renderHook(() => useSubmission());
+
+    await act(async () => {
+      await result.current.run(action, "Saved", clearForm);
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Não foi possível conectar.");
+    expect(clearForm).not.toHaveBeenCalled();
+  });
 });

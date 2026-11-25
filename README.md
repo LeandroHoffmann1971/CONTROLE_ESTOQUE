@@ -25,7 +25,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
 
 ## Instalação e execução
 
-1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique a migração `003_movement_edit_and_delete.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; a migração instala as operações transacionais de edição e exclusão de movimentações. Para uma instalação existente, aplique em ordem os scripts incrementais `001`, `002` e `003` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
+1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique as migrações `003_movement_edit_and_delete.sql` e `004_fixes_and_hardening.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; as migrações instalam as operações transacionais de edição/exclusão e os ajustes de integridade. Para uma instalação existente, aplique em ordem os scripts incrementais `001`, `002`, `003` e `004` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
 2. Crie o arquivo local `.env` a partir do exemplo:
 
    ```powershell
@@ -75,17 +75,20 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 ## Diagnóstico de acesso ao banco
 
 - `401/403` do Supabase: confira a chave secreta do projeto e não use `anon`/`publishable` no backend.
-- `400/404`: em banco existente, execute as migrações `001`, `002` e `003` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois a migração `003`.
+- `400/404`: em banco existente, execute as migrações `001` a `004` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois as migrações `003` e `004`.
 - Falha de conexão sem status HTTP: confirme a URL HTTPS do projeto, a rede e se o projeto Supabase está ativo.
 - A mensagem detalhada do Supabase fica nos logs do servidor; a resposta da API orienta a categoria do problema sem expor a chave.
 
 ## Recursos e comportamento
 
-- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação.
+- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Produtos têm unidade de medida (1 a 10 caracteres; `"un"` é usada para cadastros antigos). Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação, rejeitando alterações que deixariam qualquer saldo negativo.
+- O histórico de movimentações continua incluindo produtos inativos. As operações de entrada, edição e exclusão bloqueiam a linha do produto durante a atualização do saldo para serializar alterações concorrentes.
 - A tela Movimentações exige Data de Início e Data de Término. As datas devem ser escolhidas pelo calendário (entrada manual, colagem e arraste são bloqueados); ao sair de cada campo, a interface informa se o valor está ausente ou inválido. Ambos os campos aceitam somente o período inclusivo de 01/01/2000 a 31/12/2100. A consulta filtra datas inclusivas no fuso local do navegador e impede intervalo invertido tanto no formulário quanto na API.
 - Entradas e saídas são registradas a partir dos cards de produtos.
 - As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
-- O token de acesso existe somente na memória do processo da API; o armazenamento é local ao processo e não compartilhado entre instâncias. A interface também não persiste token e recarregar a página exige novo login.
+- Leituras da API são canceladas quando a tela ou diálogo é fechado, e abortos não são apresentados como erros de rede. Timeout e falhas de conexão exibem mensagens amigáveis; formulários mantêm os valores quando a gravação não foi concluída.
+- O service worker usa Network-First para navegações e chamadas `/api/*`; respostas autenticadas não são guardadas no cache. O cache de navegação só é usado como fallback quando a rede falha.
+- Os tokens de acesso são JWTs assinados com HMAC e sobrevivem à reinicialização da API por até 8 horas. Configure `Auth:SigningKey` (ou `Auth__SigningKey`) com uma chave aleatória de pelo menos 32 bytes; na ausência, a chave secreta do Supabase é usada como chave de assinatura. A interface não persiste o token e recarregar a página exige novo login.
 - O catálogo e operações pendentes são separados por usuário em `despensa-products:{userId}` e `despensa-pending:{userId}`. O sincronizador usa mutex local e `navigator.locks` quando disponível; IDs de operações persistidos permitem repetição idempotente para cadastro de produto e movimentação. Nenhuma senha ou token é gravado no `localStorage`.
 - Usuários e produtos são filtrados para ativos por padrão. Gerentes podem solicitar `includeInactive=true`; movimentações/saídas verificam o saldo na API e no trigger SQL.
 - Tentativas de login são registradas em `login_audit`; o limite atômico é de cinco falhas por combinação CPF (hash) + IP a cada 15 minutos. O IP e user-agent são enviados somente à API.
@@ -126,7 +129,7 @@ Configure as variáveis de ambiente do Supabase no serviço ou container. A imag
 
 O arquivo `.env` contém configurações locais e é ignorado pelo Git. O schema SQL não inclui nomes, CPFs, senhas nem contas iniciais; o gerente inicial é cadastrado explicitamente pelo script de bootstrap, usando variáveis locais. A chave de serviço do Supabase ignora RLS e deve permanecer exclusivamente no servidor.
 
-Os tokens de autenticação e os perfis são validados pela API. Os tokens permanecem em memória, então uma reinicialização da API encerra as sessões; para múltiplas instâncias, configure armazenamento compartilhado de sessões antes da implantação. Use HTTPS em implantação pública.
+Os tokens de autenticação são assinados e validados pela API, e os perfis permanecem verificados server-side. Configure uma chave HMAC forte, estável e compartilhada entre instâncias; sem ela, a chave secreta do Supabase é usada, e sua rotação encerra as sessões emitidas anteriormente. Use HTTPS em implantação pública.
 
 ## Respostas da Revisão Final
 
@@ -151,7 +154,7 @@ O aviso após 10 s e o timeout de 15 s estão no cliente comum de API; não há 
 |---|---|---|---|
 | CPF | `isValidCpf` e feedback de formulário | Dígitos verificadores no cadastro/login | `is_valid_cpf` e CHECK do formato |
 | Senha | Exatamente 6 caracteres ASCII alfanuméricos | Validação de contrato e PBKDF2 | Hash armazenado; não valida a senha em texto |
-| Nome | Trim e limites por tela | Valida limites e persiste o nome trimado | CHECK/tipo varchar |
+| Descrição e unidade | Valida limites após trim | Valida 3-250 e 1-10 caracteres e persiste valores trimados | CHECK de tamanho trimado; unidade padrão `un` |
 | Quantidade e saldo | Decimal até 3 casas; saída limitada ao saldo exibido | Faixa `numeric(12,3)` e valida saldo lido | CHECK e trigger atômico bloqueiam saldo negativo |
 | Usuário/produto ativo | Filtro padrão e filtro de inativos para gerente | Consultas por padrão filtram ativos; permissões por cargo | `is_active NOT NULL DEFAULT true`; trigger bloqueia movimento em produto inativo |
 

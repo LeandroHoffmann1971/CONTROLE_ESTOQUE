@@ -1,5 +1,15 @@
 **/bin/
 **/obj/
+bin/
+obj/
+node_modules/
+.vite/
+.vitest-cache/
+dist/
+coverage/
+*.tsbuildinfo
+*.tmp
+*.temp
 .vs/
 .vscode/
 *.user

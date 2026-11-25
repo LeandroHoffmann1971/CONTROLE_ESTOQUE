@@ -10,7 +10,14 @@ import {
   MOVEMENT_DATE_MAX,
   MOVEMENT_DATE_MIN
 } from "./utils/movementDateRange.js";
-import { isValidCpf, isValidNumeric12_3, isValidPassword, trimmedLength } from "./utils/validators.js";
+import {
+  isValidCpf,
+  isValidNumeric12_3,
+  isValidPassword,
+  isValidProductDescription,
+  isValidUnit,
+  trimmedLength
+} from "./utils/validators.js";
 
 const PASSWORD_ERROR = "A senha deve ter 6 caracteres alfanuméricos";
 const EMPTY_PRODUCTS = { status: "loading", data: [], error: null };
@@ -482,8 +489,8 @@ function ProductCard({ product, manager, onMovement, onEdit, onDelete, deleting 
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div className="min-w-0"><dt className="text-xs text-[#777d70]">Código</dt><dd className="mt-0.5 break-all font-mono text-[#62685c]">{product.code ?? "—"}</dd></div>
-        <div><dt className="text-xs text-[#777d70]">Estoque atual</dt><dd className={`mt-0.5 font-bold ${low ? "text-red-700" : "text-[#3e4438]"}`}>{formatQuantity(product.current_stock)}</dd></div>
-        <div><dt className="text-xs text-[#777d70]">Estoque mínimo</dt><dd className="mt-0.5 text-[#454b3f]">{formatQuantity(product.minimum_stock)}</dd></div>
+        <div><dt className="text-xs text-[#777d70]">Estoque atual</dt><dd className={`mt-0.5 font-bold ${low ? "text-red-700" : "text-[#3e4438]"}`}>{formatQuantity(product.current_stock)} {product.unit || "un"}</dd></div>
+        <div><dt className="text-xs text-[#777d70]">Estoque mínimo</dt><dd className="mt-0.5 text-[#454b3f]">{formatQuantity(product.minimum_stock)} {product.unit || "un"}</dd></div>
         <div className="min-w-0"><dt className="text-xs text-[#777d70]">Status</dt><dd className="mt-0.5 break-words text-[#454b3f]">{low ? "Abaixo do mínimo" : "Acima do mínimo"}</dd></div>
       </dl>
 
@@ -612,7 +619,7 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
                       <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${entry ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{entry ? "Entrada" : "Saída"}</span>
                     </div>
                     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                      <Detail label="Quantidade"><span className={`font-bold ${entry ? "text-green-700" : "text-red-700"}`}>{entry ? "+" : "−"}{formatQuantity(movement.quantity)}</span></Detail>
+                      <Detail label="Quantidade"><span className={`font-bold ${entry ? "text-green-700" : "text-red-700"}`}>{entry ? "+" : "−"}{formatQuantity(movement.quantity)} {movement.productUnit || "un"}</span></Detail>
                       <Detail label="Data">{formatDate(movement.createdAt)}</Detail>
                       <Detail label="Saldo após movimento">{formatQuantity(movement.balanceAfter)}</Detail>
                       <Detail label="Motivo">{movement.reason || "—"}</Detail>
@@ -746,13 +753,14 @@ function PasswordPage({ onChangePassword, onLoadUser }) {
   const [userResource, setUserResource] = useState({ status: "loading", user: null, error: "" });
 
   useEffect(() => {
-    let active = true;
-    onLoadUser().then(user => {
-      if (active) setUserResource({ status: "success", user, error: "" });
+    const controller = new AbortController();
+    onLoadUser(controller.signal).then(user => {
+      if (!controller.signal.aborted) setUserResource({ status: "success", user, error: "" });
     }).catch(error => {
-      if (active) setUserResource({ status: "error", user: null, error: error.message });
+      if (!controller.signal.aborted && error.name !== "AbortError")
+        setUserResource({ status: "error", user: null, error: error.message });
     });
-    return () => { active = false; };
+    return () => controller.abort();
   }, [onLoadUser]);
 
   const submit = async event => {
@@ -877,6 +885,7 @@ function ProductDialog({ product, onSave, onClose }) {
   const submission = useSubmission();
   const [form, setForm] = useState({
     name: product?.name || "",
+    unit: product?.unit || "un",
     minimumStock: product?.minimum_stock ?? "0",
     initialStock: "0",
     isActive: product?.is_active ?? true
@@ -885,13 +894,15 @@ function ProductDialog({ product, onSave, onClose }) {
 
   const submit = async event => {
     event.preventDefault();
-    const error = trimmedLength(form.name) < 3 || trimmedLength(form.name) > 250
+    const error = !isValidProductDescription(form.name)
       ? "A descrição deve ter entre 3 e 250 caracteres."
-      : !isValidNumeric12_3(form.minimumStock)
-        ? "O estoque mínimo deve ser maior ou igual a zero, com até 3 casas decimais."
-        : !editing && !isValidNumeric12_3(form.initialStock)
-          ? "O estoque inicial deve ser maior ou igual a zero, com até 3 casas decimais."
-          : "";
+      : !isValidUnit(form.unit)
+        ? "A unidade de medida deve ter entre 1 e 10 caracteres."
+        : !isValidNumeric12_3(form.minimumStock)
+          ? "O estoque mínimo deve ser maior ou igual a zero, com até 3 casas decimais."
+          : !editing && !isValidNumeric12_3(form.initialStock)
+            ? "O estoque inicial deve ser maior ou igual a zero, com até 3 casas decimais."
+            : "";
     if (error) {
       await submission.run(() => { throw new Error(error); }, "");
       return;
@@ -906,7 +917,8 @@ function ProductDialog({ product, onSave, onClose }) {
   return (
     <Modal title={editing ? "Editar produto" : "Novo produto"} description="Preencha os dados do produto." onClose={onClose}>
       <form className="space-y-4" onSubmit={submit}>
-        <Field label="Descrição"><input className={inputClass} disabled={submission.status === "loading"} maxLength={250} minLength={3} onChange={event => { setForm({ ...form, name: event.target.value }); submission.clear(); }} required value={form.name} /></Field>
+        <Field label="Descrição"><input className={inputClass} disabled={submission.status === "loading"} onChange={event => { setForm({ ...form, name: event.target.value }); submission.clear(); }} required value={form.name} /></Field>
+        <Field label="Unidade de medida"><input className={inputClass} disabled={submission.status === "loading"} onChange={event => { setForm({ ...form, unit: event.target.value }); submission.clear(); }} required value={form.unit} /></Field>
         <Field label="Estoque mínimo"><input className={inputClass} disabled={submission.status === "loading"} min="0" onChange={event => { setForm({ ...form, minimumStock: event.target.value }); submission.clear(); }} required step="0.001" type="number" value={form.minimumStock} /></Field>
         {editing && <label className="flex items-center gap-2 text-sm font-medium"><input checked={form.isActive} disabled={submission.status === "loading"} onChange={event => setForm(current => ({ ...current, isActive: event.target.checked }))} type="checkbox" /> Produto ativo</label>}
         {!editing && <Field label="Estoque inicial"><input className={inputClass} disabled={submission.status === "loading"} min="0" onChange={event => { setForm({ ...form, initialStock: event.target.value }); submission.clear(); }} required step="0.001" type="number" value={form.initialStock} /></Field>}
@@ -1090,10 +1102,33 @@ export default function App() {
   const [showInactiveUsers, setShowInactiveUsers] = useState(false);
   const [connection, setConnection] = useState("offline");
   const [dialog, setDialog] = useState(null);
+  const dialogRequestRef = useRef(null);
+  const resourceRequestsRef = useRef(new Map());
   const [toast, setToast] = useState(null);
   const [loginNotice, setLoginNotice] = useState("");
 
   const notify = useCallback((message, type = "success", onRetry) => setToast({ message, type, onRetry, id: Date.now() }), []);
+  const closeDialog = () => {
+    dialogRequestRef.current?.abort();
+    dialogRequestRef.current = null;
+    setDialog(null);
+  };
+  const createResourceRequest = useCallback((key, parentSignal) => {
+    resourceRequestsRef.current.get(key)?.abort();
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort();
+    if (parentSignal?.aborted) controller.abort();
+    else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+    resourceRequestsRef.current.set(key, controller);
+    return {
+      signal: controller.signal,
+      dispose: () => {
+        parentSignal?.removeEventListener("abort", abortFromParent);
+        if (resourceRequestsRef.current.get(key) === controller)
+          resourceRequestsRef.current.delete(key);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => setPage(window.location.hash.slice(1) || "estoque");
@@ -1122,6 +1157,16 @@ export default function App() {
       setPage("estoque");
     }
   }, [auth.user, page]);
+
+  useEffect(() => {
+    const controller = dialogRequestRef.current;
+    if (!controller) return;
+    controller.abort();
+    dialogRequestRef.current = null;
+    setDialog(current => current?.loading ? null : current);
+  }, [page]);
+
+  useEffect(() => () => dialogRequestRef.current?.abort(), []);
 
   const syncPending = useCallback(() => withSynchronizationLock(async () => {
     const pending = readPending(auth.user.id);
@@ -1161,65 +1206,119 @@ export default function App() {
     notify("Alterações offline sincronizadas.");
   }), [auth.token, auth.user, notify]);
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async parentSignal => {
     if (!auth.token) return;
+    const request = createResourceRequest("products", parentSignal);
+    const { signal } = request;
+    if (signal.aborted) {
+      request.dispose();
+      return;
+    }
     setProducts(current => ({ ...current, status: "loading", error: null }));
     try {
       await syncPending();
-      const data = await api(`/api/products${showInactiveProducts ? "?includeInactive=true" : ""}`, auth.token);
+      if (signal?.aborted) return;
+      const data = await api(
+        `/api/products${showInactiveProducts ? "?includeInactive=true" : ""}`,
+        auth.token,
+        { signal }
+      );
+      if (signal?.aborted) return;
       localStorage.setItem(productCacheKey(auth.user.id), JSON.stringify(data.filter(product => product.is_active !== false)));
       setProducts({ status: "success", data, error: null });
       setConnection("online");
     } catch (error) {
+      if (signal?.aborted || error.name === "AbortError") return;
       setProducts(current => ({ status: "error", data: current.data, error: error.message }));
       setConnection("offline");
+    } finally {
+      request.dispose();
     }
-  }, [auth.token, auth.user?.id, showInactiveProducts, syncPending]);
+  }, [auth.token, auth.user?.id, showInactiveProducts, syncPending, createResourceRequest]);
 
-  const loadMovements = useCallback(async (filters = movementFilters) => {
+  const loadMovements = useCallback(async (filters = movementFilters, parentSignal) => {
     if (!auth.token) return;
+    const request = createResourceRequest("movements", parentSignal);
+    const { signal } = request;
+    if (signal.aborted) {
+      request.dispose();
+      return;
+    }
     setMovements(current => ({ ...current, status: "loading", error: null }));
     try {
       const query = new URLSearchParams();
       if (filters.startDate) query.set("startAt", localDayBoundary(filters.startDate));
       if (filters.endDate) query.set("endBefore", localDayBoundary(filters.endDate, true));
       const suffix = query.toString();
-      const data = await api(`/api/movements${suffix ? `?${suffix}` : ""}`, auth.token);
+      const data = await api(`/api/movements${suffix ? `?${suffix}` : ""}`, auth.token, { signal });
+      if (signal?.aborted) return;
       setMovements({ status: "success", data, error: null });
       setConnection("online");
     } catch (error) {
+      if (signal?.aborted || error.name === "AbortError") return;
       setMovements(current => ({ status: "error", data: current.data, error: error.message }));
       setConnection("offline");
+    } finally {
+      request.dispose();
     }
-  }, [auth.token, movementFilters]);
+  }, [auth.token, movementFilters, createResourceRequest]);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async parentSignal => {
     if (!auth.token) return;
+    const request = createResourceRequest("users", parentSignal);
+    const { signal } = request;
+    if (signal.aborted) {
+      request.dispose();
+      return;
+    }
     setUsers(current => ({ ...current, status: "loading", error: null }));
     try {
-      const data = await api(`/api/users${showInactiveUsers ? "?includeInactive=true" : ""}`, auth.token);
+      const data = await api(
+        `/api/users${showInactiveUsers ? "?includeInactive=true" : ""}`,
+        auth.token,
+        { signal }
+      );
+      if (signal?.aborted) return;
       setUsers({ status: "success", data, error: null });
       setConnection("online");
     } catch (error) {
+      if (signal?.aborted || error.name === "AbortError") return;
       setUsers(current => ({ status: "error", data: current.data, error: error.message }));
       setConnection("offline");
+    } finally {
+      request.dispose();
     }
-  }, [auth.token, showInactiveUsers]);
+  }, [auth.token, showInactiveUsers, createResourceRequest]);
 
-  const loadMe = useCallback(() => api("/api/me", auth.token), [auth.token]);
+  const loadMe = useCallback(signal => api("/api/me", auth.token, { signal }), [auth.token]);
 
   useEffect(() => {
     if (!auth.user) return;
-    if (page === "estoque") void loadProducts();
-    if (page === "movimentacoes") void loadMovements(movementFilters);
-    if (page === "usuarios") void loadUsers();
+    const controller = new AbortController();
+    if (page === "estoque") void loadProducts(controller.signal);
+    if (page === "movimentacoes") void loadMovements(movementFilters, controller.signal);
+    if (page === "usuarios") void loadUsers(controller.signal);
+    return () => {
+      controller.abort();
+      for (const request of resourceRequestsRef.current.values())
+        request.abort();
+    };
   }, [auth.user, page, loadProducts, loadMovements, loadUsers, movementFilters]);
 
   useEffect(() => {
     if (!auth.token) return undefined;
-    const onOnline = () => { if (page === "estoque") void loadProducts(); };
+    let controller;
+    const onOnline = () => {
+      if (page !== "estoque") return;
+      controller?.abort();
+      controller = new AbortController();
+      void loadProducts(controller.signal);
+    };
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      controller?.abort();
+    };
   }, [auth.token, page, loadProducts]);
 
   useEffect(() => {
@@ -1264,6 +1363,8 @@ export default function App() {
   };
 
   const clearSession = notice => {
+    dialogRequestRef.current?.abort();
+    dialogRequestRef.current = null;
     setAuth({ token: null, user: null });
     setProducts({ ...EMPTY_PRODUCTS, data: [] });
     setMovements(EMPTY_MOVEMENTS);
@@ -1278,7 +1379,8 @@ export default function App() {
   const saveProduct = async data => {
     const editing = Boolean(data.id);
     const payload = {
-      name: data.name,
+      name: data.name.trim(),
+      unit: data.unit.trim(),
       minimumStock: Number(data.minimumStock),
       ...(editing
         ? { isActive: data.isActive }
@@ -1298,7 +1400,8 @@ export default function App() {
         const cached = products.data.map(product => product.id === data.id
           ? {
             ...product,
-            name: data.name,
+            name: payload.name,
+            unit: data.unit.trim(),
             minimum_stock: Number(data.minimumStock),
             is_active: data.isActive
           }
@@ -1313,7 +1416,8 @@ export default function App() {
         const localId = crypto.randomUUID();
         const cached = [...products.data, {
           id: localId,
-          name: data.name,
+          name: payload.name,
+          unit: data.unit.trim(),
           code: null,
           minimum_stock: Number(data.minimumStock),
           current_stock: Number(data.initialStock),
@@ -1458,24 +1562,33 @@ export default function App() {
   };
 
   const openDialog = async (type, source, extra = {}) => {
+    dialogRequestRef.current?.abort();
+    dialogRequestRef.current = null;
     if (!source?.id) {
       setDialog({ type, ...extra });
       return;
     }
+    const controller = new AbortController();
+    dialogRequestRef.current = controller;
     const request = { type, source, ...extra };
     setDialog({ ...request, loading: true });
     try {
       const path = type === "user"
         ? `/api/users/${source.id}${source.isActive === false ? "?includeInactive=true" : ""}`
         : `/api/products/${source.id}${source.is_active === false ? "?includeInactive=true" : ""}`;
-      const resource = await api(path, auth.token);
+      const resource = await api(path, auth.token, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setDialog({
         ...request,
         loading: false,
         ...(type === "user" ? { user: resource } : { product: resource })
       });
     } catch (error) {
+      if (controller.signal.aborted || error.name === "AbortError") return;
       setDialog({ ...request, loading: false, error: error.message });
+    } finally {
+      if (dialogRequestRef.current === controller)
+        dialogRequestRef.current = null;
     }
   };
 
@@ -1491,8 +1604,8 @@ export default function App() {
             onDeleteProduct={deleteProduct}
             onEditProduct={product => void openDialog("product", product)}
             onMovement={(product, type) => void openDialog("movement", product, { movementType: type })}
-            onRefresh={loadProducts}
-            onRetry={loadProducts}
+            onRefresh={() => void loadProducts()}
+            onRetry={() => void loadProducts()}
             onToggleInactive={setShowInactiveProducts}
             resource={products}
             showInactive={showInactiveProducts}
@@ -1516,7 +1629,7 @@ export default function App() {
             onDelete={deleteUser}
             onEdit={user => void openDialog("user", user)}
             onReactivate={reactivateUser}
-            onRetry={loadUsers}
+            onRetry={() => void loadUsers()}
             onToggleInactive={setShowInactiveUsers}
             resource={users}
             showInactive={showInactiveUsers}
@@ -1526,16 +1639,16 @@ export default function App() {
       </AppLayout>
 
       {dialog?.loading || dialog?.error ? (
-        <Modal title="Carregando dados" description="Consultando o registro atualizado no servidor." onClose={() => setDialog(null)}>
+        <Modal title="Carregando dados" description="Consultando o registro atualizado no servidor." onClose={closeDialog}>
           {dialog.loading
             ? <p role="status" className="py-4">Carregando...</p>
             : <div role="alert" className="space-y-3"><p>{dialog.error}</p><ActionButton onClick={() => void openDialog(dialog.type, dialog.source, { movementType: dialog.movementType })} type="button">Tentar novamente</ActionButton></div>}
         </Modal>
       ) : null}
-      {dialog?.type === "product" && !dialog.loading && !dialog.error && <ProductDialog key={dialog.product?.id || "new"} onClose={() => setDialog(null)} onSave={saveProduct} product={dialog.product} />}
-      {dialog?.type === "movement" && !dialog.loading && !dialog.error && <MovementDialog key={`${dialog.product.id}-${dialog.movementType}`} onClose={() => setDialog(null)} onSave={registerMovement} product={dialog.product} type={dialog.movementType} user={auth.user} />}
-      {dialog?.type === "editMovement" && <EditMovementDialog key={dialog.movement.id} movement={dialog.movement} onClose={() => setDialog(null)} onSave={saveMovement} />}
-      {dialog?.type === "user" && !dialog.loading && !dialog.error && <UserEditDialog key={dialog.user.id} onClose={() => setDialog(null)} onSave={saveUser} user={dialog.user} />}
+      {dialog?.type === "product" && !dialog.loading && !dialog.error && <ProductDialog key={dialog.product?.id || "new"} onClose={closeDialog} onSave={saveProduct} product={dialog.product} />}
+      {dialog?.type === "movement" && !dialog.loading && !dialog.error && <MovementDialog key={`${dialog.product.id}-${dialog.movementType}`} onClose={closeDialog} onSave={registerMovement} product={dialog.product} type={dialog.movementType} user={auth.user} />}
+      {dialog?.type === "editMovement" && <EditMovementDialog key={dialog.movement.id} movement={dialog.movement} onClose={closeDialog} onSave={saveMovement} />}
+      {dialog?.type === "user" && !dialog.loading && !dialog.error && <UserEditDialog key={dialog.user.id} onClose={closeDialog} onSave={saveUser} user={dialog.user} />}
       <Toast onClose={() => setToast(null)} toast={toast} />
     </>
   );

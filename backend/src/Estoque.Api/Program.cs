@@ -40,44 +40,6 @@ app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = frontendFiles });
 app.UseStaticFiles(new StaticFileOptions { FileProvider = frontendFiles });
 app.Use(async (context, next) =>
 {
-	var path = context.Request.Path;
-	if (!path.StartsWithSegments("/api") || path == "/api/health" ||
-		path == "/api/auth/login" || HttpMethods.IsOptions(context.Request.Method))
-	{
-		await next();
-		return;
-	}
-
-	var authorization = context.Request.Headers.Authorization.ToString();
-	var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-		? authorization["Bearer ".Length..].Trim()
-		: "";
-	var tokens = context.RequestServices.GetRequiredService<AccessTokenStore>();
-	if (token.Length == 0 || !tokens.TryGetUser(token, out var user) || user is null)
-	{
-		context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-		await context.Response.WriteAsJsonAsync(new { title = "Não autenticado", status = 401, detail = "Faça login para continuar." });
-		return;
-	}
-
-	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
-		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
-	var isProductRead = HttpMethods.IsGet(context.Request.Method) &&
-		(path == "/api/products" || System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$"));
-	var isPasswordChange = HttpMethods.IsPut(context.Request.Method) && path == "/api/auth/password";
-	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
-	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isPasswordChange && !isLogout)
-	{
-		context.Response.StatusCode = StatusCodes.Status403Forbidden;
-		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta operação está disponível apenas para gerentes." });
-		return;
-	}
-
-	context.Items["authenticated-user"] = user;
-	await next();
-});
-app.Use(async (context, next) =>
-{
 	try
 	{
 		await next();
@@ -105,21 +67,70 @@ app.Use(async (context, next) =>
 			: exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
 				? "O Supabase recusou a chave do servidor. Confira SUPABASE_SECRET_KEY."
 				: exception.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.NotFound
-					? "O schema do Supabase está desatualizado. Execute as migrações 001 e 002 na ordem indicada no README."
+					? "O schema do Supabase está desatualizado. Execute as migrações indicadas no README."
 					: exception.StatusCode is null
 						? "Não foi possível conectar ao Supabase. Confira a URL, a conexão de rede e a disponibilidade do projeto."
 						: "O Supabase não conseguiu concluir a solicitação. Confira os logs da API.";
 		await Results.Problem(detail, statusCode: status).ExecuteAsync(context);
 	}
 });
+app.Use(async (context, next) =>
+{
+	var path = context.Request.Path;
+	if (!path.StartsWithSegments("/api") || path == "/api/health" ||
+		path == "/api/auth/login" || HttpMethods.IsOptions(context.Request.Method))
+	{
+		await next();
+		return;
+	}
+
+	var authorization = context.Request.Headers.Authorization.ToString();
+	var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+		? authorization["Bearer ".Length..].Trim()
+		: "";
+	var tokens = context.RequestServices.GetRequiredService<AccessTokenStore>();
+	if (token.Length == 0 || !tokens.TryGetUser(token, out var user) || user is null)
+	{
+		context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		await context.Response.WriteAsJsonAsync(new { title = "Não autenticado", status = 401, detail = "Faça login para continuar." });
+		return;
+	}
+
+	var currentUser = await context.RequestServices.GetRequiredService<UserService>()
+		.GetByIdAsync(user.Id, context.RequestAborted);
+	if (currentUser is null)
+	{
+		context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		await context.Response.WriteAsJsonAsync(new { title = "Não autenticado", status = 401, detail = "Faça login para continuar." });
+		return;
+	}
+	user = new AuthenticatedUser(currentUser.Id, currentUser.Name, currentUser.Status);
+
+	var isMovementRegistration = HttpMethods.IsPost(context.Request.Method) &&
+		System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+/movements$");
+	var isProductRead = HttpMethods.IsGet(context.Request.Method) &&
+		(path == "/api/products" || System.Text.RegularExpressions.Regex.IsMatch(path, @"^/api/products/[0-9a-fA-F-]+$"));
+	var isCurrentUserRead = HttpMethods.IsGet(context.Request.Method) && path == "/api/me";
+	var isPasswordChange = HttpMethods.IsPut(context.Request.Method) && path == "/api/auth/password";
+	var isLogout = HttpMethods.IsPost(context.Request.Method) && path == "/api/auth/logout";
+	if (user.Status != "GERENTE" && !isMovementRegistration && !isProductRead && !isCurrentUserRead && !isPasswordChange && !isLogout)
+	{
+		context.Response.StatusCode = StatusCodes.Status403Forbidden;
+		await context.Response.WriteAsJsonAsync(new { title = "Acesso negado", status = 403, detail = "Esta operação está disponível apenas para gerentes." });
+		return;
+	}
+
+	context.Items["authenticated-user"] = user;
+	context.Items["authenticated-user-profile"] = currentUser;
+	await next();
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
-app.MapGet("/api/me", async (HttpContext context, UserService service, CancellationToken token) =>
+app.MapGet("/api/me", (HttpContext context) =>
 {
-	if (context.Items["authenticated-user"] is not UserResponse sessionUser)
+	if (context.Items["authenticated-user-profile"] is not UserResponse currentUser)
 		return Results.Unauthorized();
-	var currentUser = await service.GetByIdAsync(sessionUser.Id, token);
-	return currentUser is null ? Results.Unauthorized() : Results.Ok(currentUser);
+	return Results.Ok(currentUser);
 });
 app.MapPost("/api/auth/login", async (LoginRequest request, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
 {
@@ -147,7 +158,7 @@ app.MapPost("/api/auth/login", async (LoginRequest request, HttpContext context,
 })
 	.WithName("Login")
 	.WithSummary("Autentica um usuário")
-	.WithDescription("Valida CPF e senha e emite um token de acesso mantido em memória.");
+	.WithDescription("Valida CPF e senha e emite um JWT assinado com HMAC e validade de oito horas.");
 app.MapPost("/api/auth/logout", (HttpContext context, AccessTokenStore tokens) =>
 {
 	var authorization = context.Request.Headers.Authorization.ToString();
@@ -159,7 +170,7 @@ app.MapPost("/api/auth/logout", (HttpContext context, AccessTokenStore tokens) =
 	.WithSummary("Encerra a sessão atual");
 app.MapPut("/api/auth/password", async (ChangePasswordRequest request, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
 {
-	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not AuthenticatedUser currentUser)
 		return Results.Unauthorized();
 	await service.ChangePasswordAsync(currentUser.Id, request, token);
 	tokens.RevokeUser(currentUser.Id);
@@ -174,7 +185,7 @@ app.MapPut("/api/auth/password", async (ChangePasswordRequest request, HttpConte
 	.Produces(StatusCodes.Status404NotFound);
 app.MapGet("/api/users", async (HttpContext context, UserService service, CancellationToken token, bool includeInactive = false) =>
 {
-	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+	if (includeInactive && context.Items["authenticated-user"] is AuthenticatedUser { Status: not "GERENTE" })
 		return Results.Forbid();
 	return Results.Ok(await service.GetUsersAsync(token, includeInactive));
 })
@@ -222,7 +233,7 @@ app.MapPut("/api/users/{id:long}", async (long id, UpdateUserRequest request, Us
 	.WithDescription("Disponível somente para gerentes. Deixe a senha vazia para mantê-la.");
 app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserService service, AccessTokenStore tokens, CancellationToken token) =>
 {
-	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not AuthenticatedUser currentUser)
 		return Results.Unauthorized();
 	try
 	{
@@ -240,13 +251,13 @@ app.MapDelete("/api/users/{id:long}", async (long id, HttpContext context, UserS
 	.WithDescription("Disponível somente para gerentes. Não permite excluir a própria conta ou o último gerente.");
 app.MapGet("/api/products", async (HttpContext context, StockService service, CancellationToken token, bool includeInactive = false) =>
 {
-	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+	if (includeInactive && context.Items["authenticated-user"] is AuthenticatedUser { Status: not "GERENTE" })
 		return Results.Forbid();
 	return Results.Ok(await service.GetProductsAsync(token, includeInactive));
 });
 app.MapGet("/api/products/{id:guid}", async (Guid id, HttpContext context, StockService service, CancellationToken token, bool includeInactive = false) =>
 {
-	if (includeInactive && context.Items["authenticated-user"] is UserResponse { Status: not "GERENTE" })
+	if (includeInactive && context.Items["authenticated-user"] is AuthenticatedUser { Status: not "GERENTE" })
 		return Results.Forbid();
 	var product = await service.GetProductAsync(id, token, includeInactive);
 	return product is null ? Results.NotFound() : Results.Ok(product);
@@ -255,11 +266,11 @@ app.MapPost("/api/products", async (CreateProductRequest request, HttpContext co
 {
 	if (request.ClientOperationId.HasValue &&
 		(!context.Items.TryGetValue("authenticated-user", out var value) ||
-		 value is not UserResponse currentUser || request.CreatedBy != currentUser.Id))
+		 value is not AuthenticatedUser currentUser || request.CreatedBy != currentUser.Id))
 		return Results.Forbid();
 	var createRequest = request.ClientOperationId.HasValue
 		? request
-		: request with { CreatedBy = context.Items.TryGetValue("authenticated-user", out var userValue) && userValue is UserResponse user ? user.Id : null };
+		: request with { CreatedBy = context.Items.TryGetValue("authenticated-user", out var userValue) && userValue is AuthenticatedUser user ? user.Id : null };
 	return Results.Created("/api/products", await service.CreateProductAsync(createRequest, token));
 });
 app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest request, StockService service, CancellationToken token) =>
@@ -290,7 +301,7 @@ app.MapDelete("/api/movements/{id:guid}", async (Guid id, StockService service, 
 	.WithDescription("Disponível somente para gerentes. Inativa o registro e ajusta o saldo atomicamente.");
 app.MapPost("/api/products/{id:guid}/movements", async (Guid id, CreateMovementRequest request, HttpContext context, StockService service, CancellationToken token) =>
 {
-	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
+	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not AuthenticatedUser currentUser)
 		return Results.Unauthorized();
 	if (request.ClientOperationId.HasValue && request.CreatedBy != currentUser.Id)
 		return Results.Forbid();

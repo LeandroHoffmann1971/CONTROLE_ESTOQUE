@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isValidCpf, isValidNumeric12_3, isValidPassword, trimmedLength } from "./validators.js";
+import {
+  isValidCpf,
+  isValidNumeric12_3,
+  isValidPassword,
+  isValidProductDescription,
+  isValidUnit,
+  trimmedLength
+} from "./validators.js";
 
 describe("validators", () => {
   it("checks CPF digits, checksum, and repeated digits", () => {
@@ -21,5 +28,15 @@ describe("validators", () => {
     expect(isValidNumeric12_3("1000000000")).toBe(false);
     expect(isValidNumeric12_3("1.2345")).toBe(false);
     expect(isValidNumeric12_3("0", false)).toBe(false);
+  });
+
+  it("validates product descriptions and units after trimming", () => {
+    expect(isValidProductDescription("  abc  ")).toBe(true);
+    expect(isValidProductDescription(" a ")).toBe(false);
+    expect(isValidProductDescription(` ${"a".repeat(250)} `)).toBe(true);
+    expect(isValidProductDescription("a".repeat(251))).toBe(false);
+    expect(isValidUnit(" kg ")).toBe(true);
+    expect(isValidUnit("   ")).toBe(false);
+    expect(isValidUnit("12345678901")).toBe(false);
   });
 });

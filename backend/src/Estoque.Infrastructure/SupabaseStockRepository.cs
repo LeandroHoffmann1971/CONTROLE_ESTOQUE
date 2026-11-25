@@ -45,6 +45,7 @@ public sealed class SupabaseStockRepository : IStockRepository
         {
             id = product.Id,
             name = product.Name,
+            unit = product.Unit,
             minimum_stock = product.MinimumStock,
             current_stock = product.CurrentStock,
             client_operation_id = product.ClientOperationId,
@@ -63,6 +64,7 @@ public sealed class SupabaseStockRepository : IStockRepository
         (await SendListAsync<Product>(HttpMethod.Patch, $"products?id=eq.{product.Id}", new
         {
             name = product.Name,
+            unit = product.Unit,
             minimum_stock = product.MinimumStock,
             is_active = product.IsActive,
             updated_at = DateTimeOffset.UtcNow
@@ -105,7 +107,7 @@ public sealed class SupabaseStockRepository : IStockRepository
         do
         {
             page = (await GetListAsync<MovementResponse>(
-                $"stock_movements?select=*,products!inner(name,is_active)&is_active=eq.true&products.is_active=eq.true{filterQuery}&order=created_at.desc&limit={pageSize}&offset={offset}",
+                $"stock_movements?select=*,products(name,unit)&is_active=eq.true{filterQuery}&order=created_at.desc&limit={pageSize}&offset={offset}",
                 token)).ToList();
             movements.AddRange(page.Select(movement =>
             {
@@ -113,7 +115,8 @@ public sealed class SupabaseStockRepository : IStockRepository
                     ?? throw new InvalidOperationException("Produto não encontrado para a movimentação.");
                 return new StockMovementReportItem(
                     movement.Id, movement.ProductId, product.Name, movement.Type, movement.Quantity,
-                    movement.BalanceAfter, movement.Reason, movement.OperatorName, movement.CreatedAt);
+                    movement.BalanceAfter, movement.Reason, movement.OperatorName, movement.CreatedAt,
+                    product.Unit);
             }));
             offset += pageSize;
         } while (page.Count == pageSize);
@@ -201,12 +204,14 @@ public sealed class SupabaseStockRepository : IStockRepository
         {
             if (response.StatusCode == HttpStatusCode.BadRequest && code == "22023")
                 throw new ArgumentException(databaseMessage);
+            if (response.StatusCode == HttpStatusCode.BadRequest && code == "P0001")
+                throw new ArgumentException(databaseMessage);
             if (response.StatusCode == HttpStatusCode.NotFound && code == "P0002")
                 throw new KeyNotFoundException(databaseMessage);
         }
         var message = $"Supabase respondeu {(int)response.StatusCode}: {details}";
         if (response.StatusCode == HttpStatusCode.NotFound)
-            throw new InvalidOperationException("Recurso Supabase não encontrado. Em instalação existente, execute as migrações 001, 002 e 003; em instalação nova, execute schema.sql e a migração 003.");
+            throw new InvalidOperationException("Recurso Supabase não encontrado. Em instalação existente, execute as migrações 001 a 004; em instalação nova, execute schema.sql e as migrações 003 e 004.");
         throw new HttpRequestException(message, null, response.StatusCode);
     }
 
@@ -268,5 +273,8 @@ public sealed class SupabaseStockRepository : IStockRepository
 
         [JsonPropertyName("is_active")]
         public bool IsActive { get; set; }
+
+        [JsonPropertyName("unit")]
+        public string Unit { get; set; } = "un";
     }
 }
