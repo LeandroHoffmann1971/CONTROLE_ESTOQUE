@@ -5,6 +5,7 @@ namespace Estoque.Application;
 public sealed record CreateProductRequest(string Name, decimal MinimumStock, decimal InitialStock, Guid? ClientOperationId = null, long? CreatedBy = null);
 public sealed record UpdateProductRequest(string Name, decimal MinimumStock, bool? IsActive = null);
 public sealed record CreateMovementRequest(string Type, decimal Quantity, string? Reason, string? OperatorName, Guid? ClientOperationId = null, long? CreatedBy = null);
+public sealed record UpdateMovementRequest(string Type, decimal Quantity, string? Reason);
 public sealed record StockMovementReportItem(
     Guid Id,
     Guid ProductId,
@@ -23,8 +24,10 @@ public interface IStockRepository
     Task<Product> CreateProductAsync(Product product, CancellationToken cancellationToken);
     Task<Product> UpdateProductAsync(Product product, CancellationToken cancellationToken);
     Task<bool> DeleteProductAsync(Guid id, CancellationToken cancellationToken);
-    Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, CancellationToken cancellationToken);
     Task<StockMovement> CreateMovementAsync(StockMovement movement, CancellationToken cancellationToken);
+    Task<StockMovement> UpdateMovementAsync(Guid id, UpdateMovementRequest request, CancellationToken cancellationToken);
+    Task DeleteMovementAsync(Guid id, CancellationToken cancellationToken);
 }
 
 public sealed class StockService(IStockRepository repository)
@@ -66,10 +69,7 @@ public sealed class StockService(IStockRepository repository)
 
     public async Task<StockMovement> CreateMovementAsync(Guid productId, CreateMovementRequest request, CancellationToken cancellationToken)
     {
-        if (request.Type is not ("entry" or "exit")) throw new ArgumentException("Tipo de movimentação inválido.");
-        ValidateQuantity(request.Quantity, "A quantidade", allowZero: false);
-        if (request.Reason?.Length > 250) throw new ArgumentException("O motivo deve ter no máximo 250 caracteres.");
-        if (request.OperatorName?.Length > 150) throw new ArgumentException("O operador deve ter no máximo 150 caracteres.");
+        ValidateMovement(request.Type, request.Quantity, request.Reason, request.OperatorName);
         var product = await repository.GetProductAsync(productId, false, cancellationToken)
             ?? throw new KeyNotFoundException("Produto não encontrado ou inativo.");
         if (request.Type == "exit" && request.Quantity > product.CurrentStock)
@@ -83,7 +83,28 @@ public sealed class StockService(IStockRepository repository)
         }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken cancellationToken) => repository.GetMovementsAsync(productId, cancellationToken);
+    public Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, CancellationToken cancellationToken)
+    {
+        if (startAt.HasValue && endBefore.HasValue && startAt > endBefore)
+            throw new ArgumentException("A Data de Início deve ser menor ou igual à Data de Término.");
+        return repository.GetMovementsAsync(productId, startAt, endBefore, cancellationToken);
+    }
+
+    public async Task<StockMovement> UpdateMovementAsync(Guid id, UpdateMovementRequest request, CancellationToken cancellationToken)
+    {
+        ValidateMovement(request.Type, request.Quantity, request.Reason, null);
+        return await repository.UpdateMovementAsync(id, request, cancellationToken);
+    }
+
+    public Task DeleteMovementAsync(Guid id, CancellationToken cancellationToken) => repository.DeleteMovementAsync(id, cancellationToken);
+
+    private static void ValidateMovement(string type, decimal quantity, string? reason, string? operatorName)
+    {
+        if (type is not ("entry" or "exit")) throw new ArgumentException("Tipo de movimentação inválido.");
+        ValidateQuantity(quantity, "A quantidade", allowZero: false);
+        if (reason?.Length > 250) throw new ArgumentException("O motivo deve ter no máximo 250 caracteres.");
+        if (operatorName?.Length > 150) throw new ArgumentException("O operador deve ter no máximo 150 caracteres.");
+    }
 
     private static void ValidateProduct(string name, decimal minimumStock)
     {

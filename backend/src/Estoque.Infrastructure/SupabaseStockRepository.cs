@@ -87,9 +87,16 @@ public sealed class SupabaseStockRepository : IStockRepository
         return false;
     }
 
-    public async Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, CancellationToken token)
+    public async Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(
+        Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, CancellationToken token)
     {
-        var filter = productId.HasValue ? $"&product_id=eq.{productId}" : "";
+        var filters = new List<string>();
+        if (productId.HasValue) filters.Add($"product_id=eq.{productId}");
+        if (startAt.HasValue)
+            filters.Add($"created_at=gte.{Uri.EscapeDataString(startAt.Value.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture))}");
+        if (endBefore.HasValue)
+            filters.Add($"created_at=lt.{Uri.EscapeDataString(endBefore.Value.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture))}");
+        var filterQuery = filters.Count > 0 ? $"&{string.Join("&", filters)}" : "";
         const int pageSize = 1000;
         var movements = new List<StockMovementReportItem>();
         var offset = 0;
@@ -98,7 +105,7 @@ public sealed class SupabaseStockRepository : IStockRepository
         do
         {
             page = (await GetListAsync<MovementResponse>(
-                $"stock_movements?select=*,products!inner(name,is_active)&is_active=eq.true&products.is_active=eq.true&order=created_at.desc&limit={pageSize}&offset={offset}{filter}",
+                $"stock_movements?select=*,products!inner(name,is_active)&is_active=eq.true&products.is_active=eq.true{filterQuery}&order=created_at.desc&limit={pageSize}&offset={offset}",
                 token)).ToList();
             movements.AddRange(page.Select(movement =>
             {
@@ -145,6 +152,28 @@ public sealed class SupabaseStockRepository : IStockRepository
         }
     }
 
+    public async Task<StockMovement> UpdateMovementAsync(Guid id, UpdateMovementRequest request, CancellationToken token) =>
+        (await SendListAsync<StockMovement>(HttpMethod.Post, "rpc/update_stock_movement", new Dictionary<string, object?>
+        {
+            ["p_movement_id"] = id,
+            ["p_type"] = request.Type,
+            ["p_quantity"] = request.Quantity,
+            ["p_reason"] = request.Reason?.Trim()
+        }, token)).Single();
+
+    public async Task DeleteMovementAsync(Guid id, CancellationToken token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "rpc/delete_stock_movement")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new Dictionary<string, object?> { ["p_movement_id"] = id }, JsonOptions),
+                Encoding.UTF8,
+                "application/json")
+        };
+        using var response = await _http.SendAsync(request, token);
+        await EnsureSuccessAsync(response, token);
+    }
+
     private async Task<IReadOnlyList<T>> GetListAsync<T>(string path, CancellationToken token)
     {
         using var response = await _http.GetAsync(path, token);
@@ -168,10 +197,38 @@ public sealed class SupabaseStockRepository : IStockRepository
     {
         if (response.IsSuccessStatusCode) return;
         var details = await response.Content.ReadAsStringAsync(token);
+        if (TryReadPostgrestError(details, out var code, out var databaseMessage))
+        {
+            if (response.StatusCode == HttpStatusCode.BadRequest && code == "22023")
+                throw new ArgumentException(databaseMessage);
+            if (response.StatusCode == HttpStatusCode.NotFound && code == "P0002")
+                throw new KeyNotFoundException(databaseMessage);
+        }
         var message = $"Supabase respondeu {(int)response.StatusCode}: {details}";
         if (response.StatusCode == HttpStatusCode.NotFound)
-            throw new InvalidOperationException("Recurso Supabase não encontrado. Em instalação existente, execute as migrações 001 e 002; em instalação nova, execute schema.sql.");
+            throw new InvalidOperationException("Recurso Supabase não encontrado. Em instalação existente, execute as migrações 001, 002 e 003; em instalação nova, execute schema.sql e a migração 003.");
         throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private static bool TryReadPostgrestError(string details, out string code, out string message)
+    {
+        code = "";
+        message = "";
+        try
+        {
+            using var document = JsonDocument.Parse(details);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+            if (document.RootElement.TryGetProperty("code", out var codeElement))
+                code = codeElement.GetString() ?? "";
+            if (document.RootElement.TryGetProperty("message", out var messageElement))
+                message = messageElement.GetString() ?? "";
+            return code.Length > 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private sealed class MovementResponse

@@ -25,7 +25,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
 
 ## Instalação e execução
 
-1. Para uma instalação vazia, crie o projeto Supabase e execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor. Ele prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais. Para uma instalação existente, aplique em ordem os scripts incrementais em [`backend/supabase/migrations/`](backend/supabase/migrations/); não execute migrações antigas fora de ordem.
+1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique a migração `003_movement_edit_and_delete.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; a migração instala as operações transacionais de edição e exclusão de movimentações. Para uma instalação existente, aplique em ordem os scripts incrementais `001`, `002` e `003` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
 2. Crie o arquivo local `.env` a partir do exemplo:
 
    ```powershell
@@ -75,13 +75,14 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 ## Diagnóstico de acesso ao banco
 
 - `401/403` do Supabase: confira a chave secreta do projeto e não use `anon`/`publishable` no backend.
-- `400/404`: em banco existente, execute as migrações `001` e `002` no projeto indicado por `SUPABASE_URL`; `schema.sql` é para instalação limpa.
+- `400/404`: em banco existente, execute as migrações `001`, `002` e `003` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois a migração `003`.
 - Falha de conexão sem status HTTP: confirme a URL HTTPS do projeto, a rede e se o projeto Supabase está ativo.
 - A mensagem detalhada do Supabase fica nos logs do servidor; a resposta da API orienta a categoria do problema sem expor a chave.
 
 ## Recursos e comportamento
 
-- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas.
+- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação.
+- A tela Movimentações filtra datas inclusivas no fuso local do navegador por Data de Início e Data de Término e impede intervalo invertido tanto no formulário quanto na API.
 - Entradas e saídas são registradas a partir dos cards de produtos.
 - As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
 - O token de acesso existe somente na memória do processo da API; o armazenamento é local ao processo e não compartilhado entre instâncias. A interface também não persiste token e recarregar a página exige novo login.

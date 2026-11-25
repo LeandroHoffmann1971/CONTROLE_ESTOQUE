@@ -72,6 +72,11 @@ function formatDate(value, options = { dateStyle: "short", timeStyle: "short" })
   return new Intl.DateTimeFormat("pt-BR", options).format(new Date(value));
 }
 
+function localDayBoundary(value, nextDay = false) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day + Number(nextDay)).toISOString();
+}
+
 function formatCpf(value) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 3) return digits;
@@ -483,11 +488,70 @@ function ProductCard({ product, manager, onMovement, onEdit, onDelete, deleting 
   );
 }
 
-function MovementPage({ resource, onRetry }) {
+function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }) {
+  const [dateRange, setDateRange] = useState({ startDate: "", endDate: "" });
+  const [filterError, setFilterError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  const search = event => {
+    event.preventDefault();
+    if (dateRange.startDate && dateRange.endDate && dateRange.startDate > dateRange.endDate) {
+      setFilterError("A Data de Início deve ser menor ou igual à Data de Término.");
+      return;
+    }
+    setFilterError("");
+    onSearch(dateRange);
+  };
+  const clearSearch = () => {
+    setDateRange({ startDate: "", endDate: "" });
+    setFilterError("");
+    onSearch({ startDate: "", endDate: "" });
+  };
+  const deleteMovement = async movement => {
+    if (deletingId) return;
+    if (!window.confirm(`Excluir a movimentação de ${movement.productName}? O saldo do estoque também será ajustado.`)) return;
+    setDeletingId(movement.id);
+    try {
+      await onDelete(movement);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <>
       <PageHeading description="Registros ordenados do mais recente para o mais antigo." eyebrow="CONSULTA" title="Movimentações" />
       <section className="border-t border-[#dfe2d7] pt-5">
+        <form className="mb-5 rounded-xl border border-[#e5e7df] bg-white p-4" onSubmit={search}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
+            <Field label="Data de Início">
+              <input
+                className={inputClass}
+                max={dateRange.endDate || undefined}
+                onChange={event => {
+                  setDateRange(current => ({ ...current, startDate: event.target.value }));
+                  setFilterError("");
+                }}
+                type="date"
+                value={dateRange.startDate}
+              />
+            </Field>
+            <Field label="Data de Término">
+              <input
+                className={inputClass}
+                min={dateRange.startDate || undefined}
+                onChange={event => {
+                  setDateRange(current => ({ ...current, endDate: event.target.value }));
+                  setFilterError("");
+                }}
+                type="date"
+                value={dateRange.endDate}
+              />
+            </Field>
+            <Button className="w-full lg:w-auto" type="submit">Pesquisar</Button>
+            <Button className="w-full lg:w-auto" onClick={clearSearch} type="button" variant="secondary">Limpar</Button>
+          </div>
+          {filterError && <p className="mt-2 text-sm text-red-700" role="alert">{filterError}</p>}
+        </form>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-bold text-[#282d24]">Histórico de movimentações</h2>
@@ -516,6 +580,20 @@ function MovementPage({ resource, onRetry }) {
                       <Detail label="Motivo">{movement.reason || "—"}</Detail>
                       <Detail label="Operador">{movement.operatorName || "—"}</Detail>
                     </dl>
+                    {manager && (
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-[#f0f1ec] pt-3">
+                        <Button className="flex-1" disabled={deletingId !== null} onClick={() => onEdit(movement)} type="button" variant="secondary">Editar Movimentação</Button>
+                        <Button
+                          className="flex-1"
+                          disabled={deletingId !== null}
+                          onClick={() => void deleteMovement(movement)}
+                          type="button"
+                          variant="danger"
+                        >
+                          {deletingId === movement.id ? "Excluindo..." : "Excluir Movimentação"}
+                        </Button>
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -843,6 +921,71 @@ function MovementDialog({ product, type, user, onSave, onClose }) {
   );
 }
 
+function EditMovementDialog({ movement, onSave, onClose }) {
+  const submission = useSubmission();
+  const [type, setType] = useState(movement.type);
+  const [quantity, setQuantity] = useState(String(movement.quantity));
+  const [reason, setReason] = useState(movement.reason || "");
+
+  const submit = async event => {
+    event.preventDefault();
+    if (!isValidNumeric12_3(quantity, false)) {
+      await submission.run(() => { throw new Error("A quantidade deve ser maior que zero e ter até 3 casas decimais."); }, "");
+      return;
+    }
+    await submission.run(
+      () => onSave({ id: movement.id, type, quantity: Number(quantity), reason }),
+      "Movimentação atualizada.",
+      onClose
+    );
+  };
+
+  return (
+    <Modal title="Editar movimentação" description="Atualize os dados da entrada ou saída." onClose={onClose}>
+      <form className="space-y-4" onSubmit={submit}>
+        <p className="rounded-lg bg-[#f7f8f3] px-3 py-2 text-sm text-[#62685c]">{movement.productName} · {formatDate(movement.createdAt)}</p>
+        <Field label="Tipo">
+          <select
+            className={inputClass}
+            disabled={submission.status === "loading"}
+            onChange={event => { setType(event.target.value); submission.clear(); }}
+            value={type}
+          >
+            <option value="entry">Entrada</option>
+            <option value="exit">Saída</option>
+          </select>
+        </Field>
+        <Field label="Quantidade">
+          <input
+            className={inputClass}
+            disabled={submission.status === "loading"}
+            min="0.001"
+            onChange={event => { setQuantity(event.target.value); submission.clear(); }}
+            required
+            step="0.001"
+            type="number"
+            value={quantity}
+          />
+        </Field>
+        <Field label="Motivo">
+          <input
+            className={inputClass}
+            disabled={submission.status === "loading"}
+            maxLength={250}
+            onChange={event => { setReason(event.target.value); submission.clear(); }}
+            value={reason}
+          />
+        </Field>
+        <FormFeedback state={submission} onRetry={submission.retry} />
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <ActionButton onClick={onClose} type="button" variant="secondary">Cancelar</ActionButton>
+          <ActionButton loading={submission.status === "loading"} loadingLabel="Salvando...">Salvar alterações</ActionButton>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function UserEditDialog({ user, onSave, onClose }) {
   const submission = useSubmission();
   const [form, setForm] = useState({ name: user.name, cpf: user.cpf, status: user.status, password: "", isActive: user.isActive });
@@ -903,6 +1046,7 @@ export default function App() {
   const [page, setPage] = useState(() => window.location.hash.slice(1) || "estoque");
   const [products, setProducts] = useState(EMPTY_PRODUCTS);
   const [movements, setMovements] = useState(EMPTY_MOVEMENTS);
+  const [movementFilters, setMovementFilters] = useState({ startDate: "", endDate: "" });
   const [users, setUsers] = useState(EMPTY_USERS);
   const [showInactiveProducts, setShowInactiveProducts] = useState(false);
   const [showInactiveUsers, setShowInactiveUsers] = useState(false);
@@ -994,18 +1138,22 @@ export default function App() {
     }
   }, [auth.token, auth.user?.id, showInactiveProducts, syncPending]);
 
-  const loadMovements = useCallback(async () => {
+  const loadMovements = useCallback(async (filters = movementFilters) => {
     if (!auth.token) return;
     setMovements(current => ({ ...current, status: "loading", error: null }));
     try {
-      const data = await api("/api/movements", auth.token);
+      const query = new URLSearchParams();
+      if (filters.startDate) query.set("startAt", localDayBoundary(filters.startDate));
+      if (filters.endDate) query.set("endBefore", localDayBoundary(filters.endDate, true));
+      const suffix = query.toString();
+      const data = await api(`/api/movements${suffix ? `?${suffix}` : ""}`, auth.token);
       setMovements({ status: "success", data, error: null });
       setConnection("online");
     } catch (error) {
       setMovements(current => ({ status: "error", data: current.data, error: error.message }));
       setConnection("offline");
     }
-  }, [auth.token]);
+  }, [auth.token, movementFilters]);
 
   const loadUsers = useCallback(async () => {
     if (!auth.token) return;
@@ -1025,9 +1173,9 @@ export default function App() {
   useEffect(() => {
     if (!auth.user) return;
     if (page === "estoque") void loadProducts();
-    if (page === "movimentacoes") void loadMovements();
+    if (page === "movimentacoes") void loadMovements(movementFilters);
     if (page === "usuarios") void loadUsers();
-  }, [auth.user, page, loadProducts, loadMovements, loadUsers]);
+  }, [auth.user, page, loadProducts, loadMovements, loadUsers, movementFilters]);
 
   useEffect(() => {
     if (!auth.token) return undefined;
@@ -1081,6 +1229,7 @@ export default function App() {
     setAuth({ token: null, user: null });
     setProducts({ ...EMPTY_PRODUCTS, data: [] });
     setMovements(EMPTY_MOVEMENTS);
+    setMovementFilters({ startDate: "", endDate: "" });
     setUsers(EMPTY_USERS);
     setDialog(null);
     setLoginNotice(notice || "");
@@ -1169,6 +1318,25 @@ export default function App() {
       pending.push({ kind: "movement", productId: product.id, created_by: auth.user.id, payload });
       savePending(auth.user.id, pending);
       notify("Movimentação salva neste dispositivo e pendente de sincronização.");
+    }
+  };
+
+  const saveMovement = async ({ id, type, quantity, reason }) => {
+    await api(`/api/movements/${id}`, auth.token, {
+      method: "PUT",
+      body: JSON.stringify({ type, quantity, reason })
+    });
+    await Promise.all([loadMovements(), loadProducts()]);
+    notify("Movimentação atualizada e saldos recalculados.");
+  };
+
+  const deleteMovement = async movement => {
+    try {
+      await api(`/api/movements/${movement.id}`, auth.token, { method: "DELETE" });
+      await Promise.all([loadMovements(), loadProducts()]);
+      notify("Movimentação excluída e saldo atualizado.");
+    } catch (error) {
+      notify(`Não foi possível excluir a movimentação: ${error.message}`, "error");
     }
   };
 
@@ -1293,7 +1461,16 @@ export default function App() {
             user={auth.user}
           />
         )}
-        {page === "movimentacoes" && <MovementPage onRetry={loadMovements} resource={movements} />}
+        {page === "movimentacoes" && (
+          <MovementPage
+            manager={auth.user.status === "GERENTE"}
+            onDelete={deleteMovement}
+            onEdit={movement => setDialog({ type: "editMovement", movement })}
+            onRetry={() => loadMovements()}
+            onSearch={setMovementFilters}
+            resource={movements}
+          />
+        )}
         {page === "usuarios" && (
           <UsersPage
             currentUserId={auth.user.id}
@@ -1319,6 +1496,7 @@ export default function App() {
       ) : null}
       {dialog?.type === "product" && !dialog.loading && !dialog.error && <ProductDialog key={dialog.product?.id || "new"} onClose={() => setDialog(null)} onSave={saveProduct} product={dialog.product} />}
       {dialog?.type === "movement" && !dialog.loading && !dialog.error && <MovementDialog key={`${dialog.product.id}-${dialog.movementType}`} onClose={() => setDialog(null)} onSave={registerMovement} product={dialog.product} type={dialog.movementType} user={auth.user} />}
+      {dialog?.type === "editMovement" && <EditMovementDialog key={dialog.movement.id} movement={dialog.movement} onClose={() => setDialog(null)} onSave={saveMovement} />}
       {dialog?.type === "user" && !dialog.loading && !dialog.error && <UserEditDialog key={dialog.user.id} onClose={() => setDialog(null)} onSave={saveUser} user={dialog.user} />}
       <Toast onClose={() => setToast(null)} toast={toast} />
     </>

@@ -269,7 +269,25 @@ app.MapDelete("/api/products/{id:guid}", async (Guid id, StockService service, C
 	var inactivated = await service.DeleteProductAsync(id, token);
 	return Results.Ok(new { inactivated, message = inactivated ? "Produto inativado por possuir histórico de movimentações." : "Produto excluído." });
 });
-app.MapGet("/api/movements", async (Guid? productId, StockService service, CancellationToken token) => Results.Ok(await service.GetMovementsAsync(productId, token)));
+app.MapGet("/api/movements", async (
+	Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, StockService service, CancellationToken token) =>
+	Results.Ok(await service.GetMovementsAsync(productId, startAt, endBefore, token)))
+	.WithName("GetMovements")
+	.WithSummary("Lista movimentações por período")
+	.WithDescription("Disponível somente para gerentes. Use startAt e endBefore como limites de data/hora; endBefore é exclusivo.");
+app.MapPut("/api/movements/{id:guid}", async (Guid id, UpdateMovementRequest request, StockService service, CancellationToken token) =>
+	Results.Ok(await service.UpdateMovementAsync(id, request, token)))
+	.WithName("UpdateMovement")
+	.WithSummary("Atualiza uma movimentação")
+	.WithDescription("Disponível somente para gerentes. Atualiza quantidade/tipo e recalcula saldos históricos atomicamente.");
+app.MapDelete("/api/movements/{id:guid}", async (Guid id, StockService service, CancellationToken token) =>
+{
+	await service.DeleteMovementAsync(id, token);
+	return Results.NoContent();
+})
+	.WithName("DeleteMovement")
+	.WithSummary("Exclui uma movimentação")
+	.WithDescription("Disponível somente para gerentes. Inativa o registro e ajusta o saldo atomicamente.");
 app.MapPost("/api/products/{id:guid}/movements", async (Guid id, CreateMovementRequest request, HttpContext context, StockService service, CancellationToken token) =>
 {
 	if (!context.Items.TryGetValue("authenticated-user", out var value) || value is not UserResponse currentUser)
