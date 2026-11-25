@@ -20,6 +20,10 @@ const pendingKey = userId => `despensa-pending:${userId}`;
 const productCacheKey = userId => `despensa-products:${userId}`;
 let synchronizationPromise = null;
 
+function preventManualDateEntry(event) {
+  if (!["Tab", "Shift", "Escape", "Enter"].includes(event.key)) event.preventDefault();
+}
+
 function withSynchronizationLock(action) {
   if (synchronizationPromise) return synchronizationPromise;
   synchronizationPromise = (async () => {
@@ -550,7 +554,11 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
                 id="movement-start-date"
                 min={MOVEMENT_DATE_MIN}
                 onChange={event => updateDateRange("startDate", event.target.value)}
+                onBeforeInput={event => event.preventDefault()}
                 onBlur={() => touchDateField("startDate")}
+                onDrop={event => event.preventDefault()}
+                onKeyDown={preventManualDateEntry}
+                onPaste={event => event.preventDefault()}
                 required
                 type="date"
                 value={dateRange.startDate}
@@ -567,7 +575,11 @@ function MovementPage({ resource, onRetry, onSearch, manager, onEdit, onDelete }
                 id="movement-end-date"
                 min={dateRange.startDate && dateRange.startDate > MOVEMENT_DATE_MIN ? dateRange.startDate : MOVEMENT_DATE_MIN}
                 onChange={event => updateDateRange("endDate", event.target.value)}
+                onBeforeInput={event => event.preventDefault()}
                 onBlur={() => touchDateField("endDate")}
+                onDrop={event => event.preventDefault()}
+                onKeyDown={preventManualDateEntry}
+                onPaste={event => event.preventDefault()}
                 required
                 type="date"
                 value={dateRange.endDate}
