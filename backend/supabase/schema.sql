@@ -61,7 +61,7 @@ create table if not exists public.products (
 
 create table if not exists public.stock_movements (
     id uuid primary key default gen_random_uuid(),
-    product_id uuid not null references public.products(id) on delete restrict,
+    product_id uuid not null references public.products(id) on delete cascade,
     type varchar(10) not null check (type in ('entry', 'exit')),
     quantity numeric(12, 3) not null check (quantity > 0),
     reason varchar(250),

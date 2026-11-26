@@ -25,7 +25,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
 
 ## Instalação e execução
 
-1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique as migrações `003_movement_edit_and_delete.sql` e `004_fixes_and_hardening.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; as migrações instalam as operações transacionais de edição/exclusão e os ajustes de integridade. Para uma instalação existente, aplique em ordem os scripts incrementais `001`, `002`, `003` e `004` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
+1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique as migrações `003_movement_edit_and_delete.sql`, `004_fixes_and_hardening.sql` e `005_cascade_product_movements.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; as migrações instalam as operações transacionais, ajustes de integridade e exclusão em cascata das movimentações ao excluir um produto. Para uma instalação existente, aplique em ordem os scripts incrementais `001` a `005` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
 2. Crie o arquivo local `.env` a partir do exemplo:
 
    ```powershell
@@ -75,7 +75,7 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 ## Diagnóstico de acesso ao banco
 
 - `401/403` do Supabase: confira a chave secreta do projeto e não use `anon`/`publishable` no backend.
-- `400/404`: em banco existente, execute as migrações `001` a `004` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois as migrações `003` e `004`.
+- `400/404`: em banco existente, execute as migrações `001` a `005` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois as migrações `003` a `005`.
 - Falha de conexão sem status HTTP: confirme a URL HTTPS do projeto, a rede e se o projeto Supabase está ativo.
 - A mensagem detalhada do Supabase fica nos logs do servidor; a resposta da API orienta a categoria do problema sem expor a chave.
 
@@ -85,6 +85,7 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 - O histórico de movimentações continua incluindo produtos inativos. As operações de entrada, edição e exclusão bloqueiam a linha do produto durante a atualização do saldo para serializar alterações concorrentes.
 - A tela Movimentações exige Data de Início e Data de Término. As datas devem ser escolhidas pelo calendário (entrada manual, colagem e arraste são bloqueados); ao sair de cada campo, a interface informa se o valor está ausente ou inválido. Ambos os campos aceitam somente o período inclusivo de 01/01/2000 a 31/12/2100. A consulta filtra datas inclusivas no fuso local do navegador e impede intervalo invertido tanto no formulário quanto na API.
 - Entradas e saídas são registradas a partir dos cards de produtos.
+- Ao excluir um produto, todas as suas movimentações (inclusive inativas) são excluídas atomicamente pelo Supabase; a confirmação avisa que a ação é irreversível.
 - As telas de estoque, movimentações e usuários distinguem carregamento, lista vazia, erro com nova tentativa e dados carregados. Formulários mostram processamento, sucesso ou erro e impedem envios repetidos durante o processamento.
 - Leituras da API são canceladas quando a tela ou diálogo é fechado, e abortos não são apresentados como erros de rede. Timeout e falhas de conexão exibem mensagens amigáveis; formulários mantêm os valores quando a gravação não foi concluída.
 - O service worker usa Network-First para navegações e chamadas `/api/*`; respostas autenticadas não são guardadas no cache. O cache de navegação só é usado como fallback quando a rede falha.

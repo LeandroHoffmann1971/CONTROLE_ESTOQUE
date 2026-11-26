@@ -24,7 +24,7 @@ public interface IStockRepository
     Task<Product?> GetProductAsync(Guid id, bool includeInactive, CancellationToken cancellationToken);
     Task<Product> CreateProductAsync(Product product, CancellationToken cancellationToken);
     Task<Product> UpdateProductAsync(Product product, CancellationToken cancellationToken);
-    Task<bool> DeleteProductAsync(Guid id, CancellationToken cancellationToken);
+    Task DeleteProductAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, CancellationToken cancellationToken);
     Task<StockMovement> CreateMovementAsync(StockMovement movement, CancellationToken cancellationToken);
     Task<StockMovement> UpdateMovementAsync(Guid id, UpdateMovementRequest request, CancellationToken cancellationToken);
@@ -65,10 +65,10 @@ public sealed class StockService(IStockRepository repository)
         return await repository.UpdateProductAsync(product, cancellationToken);
     }
 
-    public async Task<bool> DeleteProductAsync(Guid id, CancellationToken cancellationToken)
+    public async Task DeleteProductAsync(Guid id, CancellationToken cancellationToken)
     {
-        if (await repository.GetProductAsync(id, false, cancellationToken) is null) throw new KeyNotFoundException("Produto não encontrado.");
-        return await repository.DeleteProductAsync(id, cancellationToken);
+        if (await repository.GetProductAsync(id, true, cancellationToken) is null) throw new KeyNotFoundException("Produto não encontrado.");
+        await repository.DeleteProductAsync(id, cancellationToken);
     }
 
     public async Task<StockMovement> CreateMovementAsync(Guid productId, CreateMovementRequest request, CancellationToken cancellationToken)

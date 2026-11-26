@@ -277,8 +277,8 @@ app.MapPut("/api/products/{id:guid}", async (Guid id, UpdateProductRequest reque
 	Results.Ok(await service.UpdateProductAsync(id, request, token)));
 app.MapDelete("/api/products/{id:guid}", async (Guid id, StockService service, CancellationToken token) =>
 {
-	var inactivated = await service.DeleteProductAsync(id, token);
-	return Results.Ok(new { inactivated, message = inactivated ? "Produto inativado por possuir histórico de movimentações." : "Produto excluído." });
+	await service.DeleteProductAsync(id, token);
+	return Results.Ok(new { message = "Produto e movimentações excluídos." });
 });
 app.MapGet("/api/movements", async (
 	Guid? productId, DateTimeOffset? startAt, DateTimeOffset? endBefore, StockService service, CancellationToken token) =>

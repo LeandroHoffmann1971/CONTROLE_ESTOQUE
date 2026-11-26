@@ -1537,7 +1537,7 @@ export default function App() {
   };
 
   const deleteProduct = async (product, confirm = true) => {
-    if (confirm && !window.confirm(`Excluir/inativar "${product.name}"? Produtos com histórico de movimentações serão inativados.`)) return;
+    if (confirm && !window.confirm(`Excluir "${product.name}" e todas as suas movimentações? Esta ação não pode ser desfeita.`)) return;
     try {
       const result = await api(`/api/products/${product.id}`, auth.token, { method: "DELETE" });
       notify(result?.message || "Produto excluído.");

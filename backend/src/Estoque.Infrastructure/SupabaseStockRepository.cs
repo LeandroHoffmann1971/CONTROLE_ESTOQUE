@@ -70,23 +70,11 @@ public sealed class SupabaseStockRepository : IStockRepository
             updated_at = DateTimeOffset.UtcNow
         }, token)).Single();
 
-    public async Task<bool> DeleteProductAsync(Guid id, CancellationToken token)
+    public async Task DeleteProductAsync(Guid id, CancellationToken token)
     {
-        var history = await GetListAsync<Guid>($"stock_movements?product_id=eq.{id}&select=id&limit=1", token);
-        if (history.Count > 0)
-        {
-            using var update = new HttpRequestMessage(HttpMethod.Patch, $"products?id=eq.{id}")
-            {
-                Content = new StringContent("{\"is_active\":false}", Encoding.UTF8, "application/json")
-            };
-            using var updateResponse = await _http.SendAsync(update, token);
-            await EnsureSuccessAsync(updateResponse, token);
-            return true;
-        }
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"products?id=eq.{id}");
         using var response = await _http.SendAsync(request, token);
         await EnsureSuccessAsync(response, token);
-        return false;
     }
 
     public async Task<IReadOnlyList<StockMovementReportItem>> GetMovementsAsync(
