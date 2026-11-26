@@ -49,7 +49,6 @@ create table if not exists public.products (
     id uuid primary key default gen_random_uuid(),
     code bigint generated always as identity unique,
     name varchar(250) not null unique check (char_length(btrim(name)) between 3 and 250),
-    unit varchar(10) not null default 'un' check (char_length(btrim(unit)) between 1 and 10),
     minimum_stock numeric(12, 3) not null default 0 check (minimum_stock >= 0),
     current_stock numeric(12, 3) not null default 0 check (current_stock >= 0),
     is_active boolean not null default true,

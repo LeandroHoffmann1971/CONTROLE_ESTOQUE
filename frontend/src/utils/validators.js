@@ -26,10 +26,6 @@ export function isValidProductDescription(value) {
   return trimmedLength(value) >= 3 && trimmedLength(value) <= 250;
 }
 
-export function isValidUnit(value) {
-  return trimmedLength(value) >= 1 && trimmedLength(value) <= 10;
-}
-
 export function isValidNumeric12_3(value, allowZero = true) {
   const number = Number(value);
   return Number.isFinite(number)

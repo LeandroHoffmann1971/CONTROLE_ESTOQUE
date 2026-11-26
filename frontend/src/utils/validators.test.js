@@ -4,7 +4,6 @@ import {
   isValidNumeric12_3,
   isValidPassword,
   isValidProductDescription,
-  isValidUnit,
   trimmedLength
 } from "./validators.js";
 
@@ -30,13 +29,10 @@ describe("validators", () => {
     expect(isValidNumeric12_3("0", false)).toBe(false);
   });
 
-  it("validates product descriptions and units after trimming", () => {
+  it("validates product descriptions after trimming", () => {
     expect(isValidProductDescription("  abc  ")).toBe(true);
     expect(isValidProductDescription(" a ")).toBe(false);
     expect(isValidProductDescription(` ${"a".repeat(250)} `)).toBe(true);
     expect(isValidProductDescription("a".repeat(251))).toBe(false);
-    expect(isValidUnit(" kg ")).toBe(true);
-    expect(isValidUnit("   ")).toBe(false);
-    expect(isValidUnit("12345678901")).toBe(false);
   });
 });

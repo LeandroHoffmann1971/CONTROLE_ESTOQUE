@@ -13,9 +13,6 @@ public sealed class Product
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
 
-    [JsonPropertyName("unit")]
-    public string Unit { get; set; } = "un";
-
     [JsonPropertyName("minimum_stock")]
     public decimal MinimumStock { get; set; }
 

@@ -25,7 +25,7 @@ As capturas abaixo mostram a interface executada localmente com conteúdo demons
 
 ## Instalação e execução
 
-1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique as migrações `003_movement_edit_and_delete.sql`, `004_fixes_and_hardening.sql` e `005_cascade_product_movements.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; as migrações instalam as operações transacionais, ajustes de integridade e exclusão em cascata das movimentações ao excluir um produto. Para uma instalação existente, aplique em ordem os scripts incrementais `001` a `005` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
+1. Para uma instalação vazia, crie o projeto Supabase, execute [`backend/supabase/schema.sql`](backend/supabase/schema.sql) no SQL Editor e, em seguida, aplique as migrações `003_movement_edit_and_delete.sql`, `004_fixes_and_hardening.sql`, `005_cascade_product_movements.sql` e `006_remove_product_unit.sql`. O schema prepara as tabelas, índices, funções e triggers sem inserir usuários ou credenciais; as migrações instalam as operações transacionais, ajustes de integridade e exclusão em cascata das movimentações ao excluir um produto. Para uma instalação existente, aplique em ordem os scripts incrementais `001` a `006` em [`backend/supabase/migrations/`](backend/supabase/migrations/).
 2. Crie o arquivo local `.env` a partir do exemplo:
 
    ```powershell
@@ -75,13 +75,13 @@ Abra <http://localhost:5500>. O servidor Vite encaminha as chamadas de API para 
 ## Diagnóstico de acesso ao banco
 
 - `401/403` do Supabase: confira a chave secreta do projeto e não use `anon`/`publishable` no backend.
-- `400/404`: em banco existente, execute as migrações `001` a `005` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois as migrações `003` a `005`.
+- `400/404`: em banco existente, execute as migrações `001` a `006` no projeto indicado por `SUPABASE_URL`; em instalação limpa, execute `schema.sql` e depois as migrações `003` a `006`.
 - Falha de conexão sem status HTTP: confirme a URL HTTPS do projeto, a rede e se o projeto Supabase está ativo.
 - A mensagem detalhada do Supabase fica nos logs do servidor; a resposta da API orienta a categoria do problema sem expor a chave.
 
 ## Recursos e comportamento
 
-- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Produtos têm unidade de medida (1 a 10 caracteres; `"un"` é usada para cadastros antigos). Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação, rejeitando alterações que deixariam qualquer saldo negativo.
+- Estoque, movimentações e usuários são apresentados em cards que mantêm as informações disponíveis nas telas. Gerentes podem editar e excluir movimentações; o backend aplica a autorização e o banco recalcula saldos históricos na mesma transação, rejeitando alterações que deixariam qualquer saldo negativo.
 - O histórico de movimentações continua incluindo produtos inativos. As operações de entrada, edição e exclusão bloqueiam a linha do produto durante a atualização do saldo para serializar alterações concorrentes.
 - A tela Movimentações exige Data de Início e Data de Término. As datas devem ser escolhidas pelo calendário (entrada manual, colagem e arraste são bloqueados); ao sair de cada campo, a interface informa se o valor está ausente ou inválido. Ambos os campos aceitam somente o período inclusivo de 01/01/2000 a 31/12/2100. A consulta filtra datas inclusivas no fuso local do navegador e impede intervalo invertido tanto no formulário quanto na API.
 - Entradas e saídas são registradas a partir dos cards de produtos.
@@ -155,7 +155,7 @@ O aviso após 10 s e o timeout de 15 s estão no cliente comum de API; não há 
 |---|---|---|---|
 | CPF | `isValidCpf` e feedback de formulário | Dígitos verificadores no cadastro/login | `is_valid_cpf` e CHECK do formato |
 | Senha | Exatamente 6 caracteres ASCII alfanuméricos | Validação de contrato e PBKDF2 | Hash armazenado; não valida a senha em texto |
-| Descrição e unidade | Valida limites após trim | Valida 3-250 e 1-10 caracteres e persiste valores trimados | CHECK de tamanho trimado; unidade padrão `un` |
+| Descrição | Valida limites após trim | Valida 3-250 caracteres e persiste valores trimados | CHECK de tamanho trimado |
 | Quantidade e saldo | Decimal até 3 casas; saída limitada ao saldo exibido | Faixa `numeric(12,3)` e valida saldo lido | CHECK e trigger atômico bloqueiam saldo negativo |
 | Usuário/produto ativo | Filtro padrão e filtro de inativos para gerente | Consultas por padrão filtram ativos; permissões por cargo | `is_active NOT NULL DEFAULT true`; trigger bloqueia movimento em produto inativo |
 

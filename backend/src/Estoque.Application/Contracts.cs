@@ -2,8 +2,8 @@ using Estoque.Domain;
 
 namespace Estoque.Application;
 
-public sealed record CreateProductRequest(string Name, decimal MinimumStock, decimal InitialStock, Guid? ClientOperationId = null, long? CreatedBy = null, string? Unit = "un");
-public sealed record UpdateProductRequest(string Name, decimal MinimumStock, bool? IsActive = null, string? Unit = null);
+public sealed record CreateProductRequest(string Name, decimal MinimumStock, decimal InitialStock, Guid? ClientOperationId = null, long? CreatedBy = null);
+public sealed record UpdateProductRequest(string Name, decimal MinimumStock, bool? IsActive = null);
 public sealed record CreateMovementRequest(string Type, decimal Quantity, string? Reason, string? OperatorName, Guid? ClientOperationId = null, long? CreatedBy = null);
 public sealed record UpdateMovementRequest(string Type, decimal Quantity, string? Reason);
 public sealed record StockMovementReportItem(
@@ -15,8 +15,7 @@ public sealed record StockMovementReportItem(
     decimal BalanceAfter,
     string? Reason,
     string? OperatorName,
-    DateTimeOffset CreatedAt,
-    string ProductUnit = "un");
+    DateTimeOffset CreatedAt);
 
 public interface IStockRepository
 {
@@ -41,12 +40,11 @@ public sealed class StockService(IStockRepository repository)
 
     public async Task<Product> CreateProductAsync(CreateProductRequest request, CancellationToken cancellationToken)
     {
-        var unit = request.Unit ?? "un";
-        ValidateProduct(request.Name, unit, request.MinimumStock);
+        ValidateProduct(request.Name, request.MinimumStock);
         ValidateQuantity(request.InitialStock, "O estoque inicial");
         return await repository.CreateProductAsync(new Product
         {
-            Id = Guid.NewGuid(), Name = request.Name.Trim(), Unit = unit.Trim(),
+            Id = Guid.NewGuid(), Name = request.Name.Trim(),
             MinimumStock = request.MinimumStock, CurrentStock = request.InitialStock,
             IsActive = true, ClientOperationId = request.ClientOperationId,
             CreatedBy = request.CreatedBy
@@ -55,11 +53,9 @@ public sealed class StockService(IStockRepository repository)
 
     public async Task<Product> UpdateProductAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken)
     {
-        ValidateProduct(request.Name, request.Unit ?? "un", request.MinimumStock);
+        ValidateProduct(request.Name, request.MinimumStock);
         var product = await repository.GetProductAsync(id, true, cancellationToken) ?? throw new KeyNotFoundException("Produto não encontrado.");
         product.Name = request.Name.Trim();
-        if (request.Unit is not null)
-            product.Unit = request.Unit.Trim();
         product.MinimumStock = request.MinimumStock;
         if (request.IsActive.HasValue) product.IsActive = request.IsActive.Value;
         return await repository.UpdateProductAsync(product, cancellationToken);
@@ -110,10 +106,9 @@ public sealed class StockService(IStockRepository repository)
         if (operatorName?.Length > 150) throw new ArgumentException("O operador deve ter no máximo 150 caracteres.");
     }
 
-    private static void ValidateProduct(string name, string unit, decimal minimumStock)
+    private static void ValidateProduct(string name, decimal minimumStock)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length is < 3 or > 250) throw new ArgumentException("A descrição deve ter entre 3 e 250 caracteres.");
-        if (string.IsNullOrWhiteSpace(unit) || unit.Trim().Length is < 1 or > 10) throw new ArgumentException("A unidade de medida deve ter entre 1 e 10 caracteres.");
         ValidateQuantity(minimumStock, "O estoque mínimo");
     }
 

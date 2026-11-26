@@ -15,7 +15,6 @@ import {
   isValidNumeric12_3,
   isValidPassword,
   isValidProductDescription,
-  isValidUnit,
   trimmedLength
 } from "./utils/validators.js";
 
@@ -489,8 +488,8 @@ function ProductCard({ product, manager, onMovement, onEdit, onDelete, deleting 
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div className="min-w-0"><dt className="text-xs text-[#777d70]">Código</dt><dd className="mt-0.5 break-all font-mono text-[#62685c]">{product.code ?? "—"}</dd></div>
-        <div><dt className="text-xs text-[#777d70]">Estoque atual</dt><dd className={`mt-0.5 font-bold ${low ? "text-red-700" : "text-[#3e4438]"}`}>{formatQuantity(product.current_stock)} {product.unit || "un"}</dd></div>
-        <div><dt className="text-xs text-[#777d70]">Estoque mínimo</dt><dd className="mt-0.5 text-[#454b3f]">{formatQuantity(product.minimum_stock)} {product.unit || "un"}</dd></div>
+        <div><dt className="text-xs text-[#777d70]">Estoque atual</dt><dd className={`mt-0.5 font-bold ${low ? "text-red-700" : "text-[#3e4438]"}`}>{formatQuantity(product.current_stock)}</dd></div>
+        <div><dt className="text-xs text-[#777d70]">Estoque mínimo</dt><dd className="mt-0.5 text-[#454b3f]">{formatQuantity(product.minimum_stock)}</dd></div>
         <div className="min-w-0"><dt className="text-xs text-[#777d70]">Status</dt><dd className="mt-0.5 break-words text-[#454b3f]">{low ? "Abaixo do mínimo" : "Acima do mínimo"}</dd></div>
       </dl>
 
@@ -885,7 +884,6 @@ function ProductDialog({ product, onSave, onClose }) {
   const submission = useSubmission();
   const [form, setForm] = useState({
     name: product?.name || "",
-    unit: product?.unit || "un",
     minimumStock: product?.minimum_stock ?? "0",
     initialStock: "0",
     isActive: product?.is_active ?? true
@@ -896,13 +894,11 @@ function ProductDialog({ product, onSave, onClose }) {
     event.preventDefault();
     const error = !isValidProductDescription(form.name)
       ? "A descrição deve ter entre 3 e 250 caracteres."
-      : !isValidUnit(form.unit)
-        ? "A unidade de medida deve ter entre 1 e 10 caracteres."
-        : !isValidNumeric12_3(form.minimumStock)
-          ? "O estoque mínimo deve ser maior ou igual a zero, com até 3 casas decimais."
-          : !editing && !isValidNumeric12_3(form.initialStock)
-            ? "O estoque inicial deve ser maior ou igual a zero, com até 3 casas decimais."
-            : "";
+      : !isValidNumeric12_3(form.minimumStock)
+        ? "O estoque mínimo deve ser maior ou igual a zero, com até 3 casas decimais."
+        : !editing && !isValidNumeric12_3(form.initialStock)
+          ? "O estoque inicial deve ser maior ou igual a zero, com até 3 casas decimais."
+          : "";
     if (error) {
       await submission.run(() => { throw new Error(error); }, "");
       return;
@@ -918,7 +914,6 @@ function ProductDialog({ product, onSave, onClose }) {
     <Modal title={editing ? "Editar produto" : "Novo produto"} description="Preencha os dados do produto." onClose={onClose}>
       <form className="space-y-4" onSubmit={submit}>
         <Field label="Descrição"><input className={inputClass} disabled={submission.status === "loading"} onChange={event => { setForm({ ...form, name: event.target.value }); submission.clear(); }} required value={form.name} /></Field>
-        <Field label="Unidade de medida"><input className={inputClass} disabled={submission.status === "loading"} onChange={event => { setForm({ ...form, unit: event.target.value }); submission.clear(); }} required value={form.unit} /></Field>
         <Field label="Estoque mínimo"><input className={inputClass} disabled={submission.status === "loading"} min="0" onChange={event => { setForm({ ...form, minimumStock: event.target.value }); submission.clear(); }} required step="0.001" type="number" value={form.minimumStock} /></Field>
         {editing && <label className="flex items-center gap-2 text-sm font-medium"><input checked={form.isActive} disabled={submission.status === "loading"} onChange={event => setForm(current => ({ ...current, isActive: event.target.checked }))} type="checkbox" /> Produto ativo</label>}
         {!editing && <Field label="Estoque inicial"><input className={inputClass} disabled={submission.status === "loading"} min="0" onChange={event => { setForm({ ...form, initialStock: event.target.value }); submission.clear(); }} required step="0.001" type="number" value={form.initialStock} /></Field>}
@@ -1380,7 +1375,6 @@ export default function App() {
     const editing = Boolean(data.id);
     const payload = {
       name: data.name.trim(),
-      unit: data.unit.trim(),
       minimumStock: Number(data.minimumStock),
       ...(editing
         ? { isActive: data.isActive }
@@ -1401,7 +1395,6 @@ export default function App() {
           ? {
             ...product,
             name: payload.name,
-            unit: data.unit.trim(),
             minimum_stock: Number(data.minimumStock),
             is_active: data.isActive
           }
@@ -1417,7 +1410,6 @@ export default function App() {
         const cached = [...products.data, {
           id: localId,
           name: payload.name,
-          unit: data.unit.trim(),
           code: null,
           minimum_stock: Number(data.minimumStock),
           current_stock: Number(data.initialStock),
